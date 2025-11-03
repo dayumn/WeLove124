@@ -1,9 +1,5 @@
 import re
 from enum import Enum
-try:
-    from . import token_types as TOKEN_INFO  # when run as module
-except Exception:
-    import token_types as TOKEN_INFO  # when run as script
 
 # Token types
 class TokenType(Enum):
@@ -172,17 +168,17 @@ TOKEN_SPEC = [
     (None, r'[ \t]+'),
 ]
 
-def create_token(token_type, value, line, column):
+def create_token(token_type, value, line, col):
     
     return {
         'type': token_type,
         'value': value,
         'line': line,
-        'column': column,
+        'col': col,
         'category': None,
     }
 
-_SIMPLE_CATEGORY_MAP = {
+CATEGORY_MAP = {
     TokenType.HAI: "Code Delimiter",
     TokenType.KTHXBYE: "Code Delimiter",
     TokenType.WAZZUP: "Variable List Delimiter",
@@ -197,37 +193,13 @@ _SIMPLE_CATEGORY_MAP = {
     TokenType.NUMBAR: "Type Literal",
     TokenType.YARN: "Type Literal",
     TokenType.TROOF: "Type Literal",
+    TokenType.INTEGER: "Integer Literal",
+    TokenType.FLOAT: "Float Literal",
+    TokenType.STRING: "Yarn Literal",
+    TokenType.WIN: "Boolean Value (True)",
+    TokenType.FAIL: "Boolean Value (False)",
+    TokenType.IDENTIFIER: "Variable Identifier",
 }
-
-def categorize_token(token):
-    value = token['value']
-    ttype = token['type']
-
-    if ttype in _SIMPLE_CATEGORY_MAP:
-        return _SIMPLE_CATEGORY_MAP[ttype]
-
-    if ttype == TokenType.INTEGER:
-        return "Integer Literal"
-    if ttype == TokenType.FLOAT:
-        return "Float Literal"
-    if ttype == TokenType.STRING:
-        return "Yarn Literal"
-    if ttype == TokenType.WIN:
-        return "Boolean Value (True)"
-    if ttype == TokenType.FAIL:
-        return "Boolean Value (False)"
-    if ttype == TokenType.IDENTIFIER:
-        return "Variable Identifier"
-
-    for kw, label in TOKEN_INFO.MULTI_KEYWORDS:
-        if value == kw:
-            return label
-
-    for pattern, label in TOKEN_INFO.REGEX_KEYWORDS:
-        if re.match(pattern, value):
-            return label
-
-    return ttype.name if isinstance(ttype, TokenType) else str(ttype)
 
 def tokenize(code):
     """
@@ -236,43 +208,47 @@ def tokenize(code):
     """
     tokens = []
     line = 1
-    column = 1
-    position = 0
+    col = 1
+    pos = 0
     
-    while position < len(code):
+    while pos < len(code):
         match_found = False
         
         # Try each token pattern
         for token_type, pattern, *flags in TOKEN_SPEC:
             regex_flags = flags[0] if flags else 0
             regex = re.compile(pattern, regex_flags)
-            match = regex.match(code, position)
+            match = regex.match(code, pos)
             
             if match:
                 value = match.group(0)
                 
                 # Skip whitespace (token_type is None)
                 if token_type is not None:
-                    tok = create_token(token_type, value, line, column)
-                    tok['category'] = categorize_token(tok)
+                    tok = create_token(token_type, value, line, col)
+                    if tok['type'] in CATEGORY_MAP:
+                        tok['category'] = CATEGORY_MAP[tok['type']]
+                    else:
+                        tok['category'] = tok['type']
                     tokens.append(tok)
                 
-                # Update position tracking
+                # Update pos tracking
                 newline_count = value.count('\n')
-                if newline_count > 0:
-                    line += newline_count
-                    column = len(value) - value.rfind('\n')
+                if newline_count <= 0:
+                    col += len(value)
                 else:
-                    column += len(value)
+                    line += newline_count
+                    col = len(value) - value.rfind('\n')
+                    
                 
-                position = match.end()
+                pos = match.end()
                 match_found = True
                 break
         
         if not match_found:
             # Handle unexpected character
-            char = code[position]
-            raise SyntaxError(f"Unexpected character '{char}' at line {line}, column {column}")
+            char = code[pos]
+            raise SyntaxError(f"Unexpected character '{char}' at line {line}, col {col}")
     
     return tokens
 
