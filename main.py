@@ -1,10 +1,13 @@
 from src.lexer import tokenizer
 from src.parser.parser import Parser
+from src.interpreter.runtime import SymbolTable, Context
+from src.interpreter.interpreter import Interpreter
+
 
 def print_tokens(tokens):
     """Print tokens in a readable format."""
     for token in tokens:
-        cat = token.get('category') or token['type'].name
+        cat = token['category'] or token['type'].name
         print(f"{cat:28} {token['value']} Line {token['line']}")
 
 
@@ -14,14 +17,14 @@ def main():
         # f"{base}/test_simple.lol"
         f"{base}/01_variables.lol",
         # f"{base}/02_gimmeh.lol",
-        # f"{base}/03_arith.lol",
-        # f"{base}/04_smoosh_assign.lol",
-        # f"{base}/05_bool.lol",
-        # f"{base}/06_comparison.lol",
-        # f"{base}/07_ifelse.lol",
-        # f"{base}/08_switch.lol",
-        # f"{base}/09_loops.lol",
-        # f"{base}/10_functions.lol",
+        f"{base}/03_arith.lol",
+        f"{base}/04_smoosh_assign.lol",
+        f"{base}/05_bool.lol",
+        f"{base}/06_comparison.lol",
+        f"{base}/07_ifelse.lol",
+        f"{base}/08_switch.lol",
+        f"{base}/09_loops.lol",
+        f"{base}/10_functions.lol",
     ]
 
     for path in files:
@@ -47,6 +50,18 @@ def main():
             else:
                 print(AST.node)
 
+            #If no errors run interpreter
+            print("\nINTERPRETER OUTPUT:")
+            lolcode_interpreter = Interpreter()
+            context = Context('<program>')
+            context.symbol_table = SymbolTable()
+            result = lolcode_interpreter.visit(AST.node, context)
+
+            if result.error:
+                print(f"\nRuntime Error: {result.error}")
+            # else:
+            #     print(f"\nProgram executed successfully")
+            
         except SyntaxError as e:
             print(f"ERROR {e}")
 main()

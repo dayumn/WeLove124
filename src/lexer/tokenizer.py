@@ -75,6 +75,8 @@ class TokenType(Enum):
     ELLIPSIS = "ELLIPSIS"
     COMMA = "COMMA"
     EXCLAMATION = "EXCLAMATION"
+    QUOTE = "QUOTE"
+    PLUS = "PLUS"
 
 # Token specification with patterns
 TOKEN_SPEC = [
@@ -153,7 +155,7 @@ TOKEN_SPEC = [
     # Literals
     (TokenType.FLOAT, r'-?\d+\.\d+'),
     (TokenType.INTEGER, r'-?\d+'),
-    (TokenType.STRING, r'"[^"]*"'),
+    (TokenType.QUOTE, r'\"'),
     
     # Identifiers
     (TokenType.IDENTIFIER, r'[a-zA-Z_][a-zA-Z0-9_]*'),
@@ -162,6 +164,7 @@ TOKEN_SPEC = [
     (TokenType.ELLIPSIS, r'\.\.\.'),
     (TokenType.COMMA, r','),
     (TokenType.EXCLAMATION, r'!'),
+    (TokenType.PLUS, r'\+'),
     (None, r'\n'),
     
     # Skip whitespace
@@ -199,6 +202,7 @@ CATEGORY_MAP = {
     TokenType.WIN: "Boolean Value (True)",
     TokenType.FAIL: "Boolean Value (False)",
     TokenType.IDENTIFIER: "Variable Identifier",
+    TokenType.QUOTE: "String Delimiter",
 }
 
 def tokenize(code):
@@ -210,39 +214,60 @@ def tokenize(code):
     line = 1
     col = 1
     pos = 0
+    in_string = False
     
     while pos < len(code):
         match_found = False
         
-        # Try each token pattern
-        for token_type, pattern, *flags in TOKEN_SPEC:
-            regex_flags = flags[0] if flags else 0
-            regex = re.compile(pattern, regex_flags)
-            match = regex.match(code, pos)
+        # Special handling for string content when inside quotes
+        if in_string and code[pos] != '"':
+            # Capture all content until the next quote or newline
+            string_start = pos
+            string_col = col
+            while pos < len(code) and code[pos] != '"' and code[pos] != '\n':
+                pos += 1
             
-            if match:
-                value = match.group()
+            if pos > string_start:
+                value = code[string_start:pos]
+                tok = create_token(TokenType.STRING, value, line, string_col)
+                tok['category'] = CATEGORY_MAP.get(TokenType.STRING, TokenType.STRING)
+                tokens.append(tok)
+                col += len(value)
+            match_found = True
+        else:
+            # Try each token pattern
+            for token_type, pattern, *flags in TOKEN_SPEC:
+                regex_flags = flags[0] if flags else 0
+                regex = re.compile(pattern, regex_flags)
+                match = regex.match(code, pos)
                 
-                # Skip whitespace (token_type is None)
-                if token_type is not None:
-                    tok = create_token(token_type, value, line, col)
-                    if tok['type'] in CATEGORY_MAP:
-                        tok['category'] = CATEGORY_MAP[tok['type']]
-                    else:
-                        tok['category'] = tok['type']
-                    tokens.append(tok)
-                
-                # Update pos tracking
-                newline_count = value.count('\n')
-                if newline_count == 0:
-                    col += len(value)
-                else:
-                    line += newline_count
-                    col = len(value) - value.rfind('\n')
+                if match:
+                    value = match.group()
                     
-                pos = match.end()
-                match_found = True
-                break
+                    # Skip whitespace (token_type is None)
+                    if token_type is not None:
+                        # Track when we enter/exit string mode
+                        if token_type == TokenType.QUOTE:
+                            in_string = not in_string
+                        
+                        tok = create_token(token_type, value, line, col)
+                        if tok['type'] in CATEGORY_MAP:
+                            tok['category'] = CATEGORY_MAP[tok['type']]
+                        else:
+                            tok['category'] = tok['type']
+                        tokens.append(tok)
+                    
+                    # Update pos tracking
+                    newline_count = value.count('\n')
+                    if newline_count == 0:
+                        col += len(value)
+                    else:
+                        line += newline_count
+                        col = len(value) - value.rfind('\n')
+                        
+                    pos = match.end()
+                    match_found = True
+                    break
         
         if not match_found:
             # Handle unexpected character
