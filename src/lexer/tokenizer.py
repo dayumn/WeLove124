@@ -176,7 +176,7 @@ def create_token(token_type, value, line, col):
         'line': line,
         'col': col,
         'category': None,
-    }
+}
 
 CATEGORY_MAP = {
     TokenType.HAI: "Code Delimiter",
@@ -221,7 +221,7 @@ def tokenize(code):
             match = regex.match(code, pos)
             
             if match:
-                value = match.group(0)
+                value = match.group()
                 
                 # Skip whitespace (token_type is None)
                 if token_type is not None:
@@ -234,13 +234,12 @@ def tokenize(code):
                 
                 # Update pos tracking
                 newline_count = value.count('\n')
-                if newline_count <= 0:
+                if newline_count == 0:
                     col += len(value)
                 else:
                     line += newline_count
                     col = len(value) - value.rfind('\n')
                     
-                
                 pos = match.end()
                 match_found = True
                 break
