@@ -1,4 +1,5 @@
 from src.lexer import tokenizer
+from src.parser.parser_new import Parser
 
 def print_tokens(tokens):
     """Print tokens in a readable format."""
@@ -10,8 +11,9 @@ def print_tokens(tokens):
 def main():
     base = "test/project-testcases"
     files = [
+        f"{base}/test_simple.lol"
         # f"{base}/01_variables.lol",
-        f"{base}/02_gimmeh.lol",
+        # f"{base}/02_gimmeh.lol",
         # f"{base}/03_arith.lol",
         # f"{base}/04_smoosh_assign.lol",
         # f"{base}/05_bool.lol",
@@ -30,11 +32,21 @@ def main():
             print(f"Skipping missing file: {path}")
             continue
 
-        print(f"\n=== Tokens for: {path} ===")
+        print(f"\n=== TEST for: {path} ===")
         try:
             tokens = tokenizer.tokenize(source)
-            print_tokens(tokens)
             print(f"Total tokens: {len(tokens)}\n")
+            print_tokens(tokens)
+
+            parser = Parser(tokens)
+            AST = parser.parse()
+            print("\nPARSE TREE")
+
+            if AST.error:
+                print(AST.error.as_string())
+            else:
+                print(AST.node)
+
         except SyntaxError as e:
-            print(f"Lexer error in {path}: {e}")
+            print(f"ERROR {e}")
 main()
