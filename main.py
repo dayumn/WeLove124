@@ -1,6 +1,7 @@
 from src.lexer import tokenizer
 from src.parser.parser import Parser
 
+
 def print_tokens(tokens):
     """Print tokens in a readable format."""
     for token in tokens:
