@@ -70,7 +70,7 @@ class BooleanNode:
 class StringNode:
   def __init__(self, token):
     self.token = token
-    self.value = str(token['value'][1:-1])  # Remove quotes
+    self.value = str(token['value'])  # Quotes already removed by tokenizer
 
   def __repr__(self):
     return f'"{self.value}"'
@@ -494,7 +494,7 @@ class Parser:
       return res
 
     # Try literal
-    if self.current_token['type'] in (TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.NOOB):
+    if self.current_token['type'] in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.NOOB):
       res.node = res.register(self.literal())
       return res
 
@@ -507,7 +507,7 @@ class Parser:
     if self.current_token['type'] in (TokenType.INTEGER, TokenType.FLOAT):
       res.node = res.register(self.arithmetic_literal())
 
-    elif self.current_token['type'] == TokenType.STRING:
+    elif self.current_token['type'] == TokenType.QUOTE:
       res.node = res.register(self.string_literal())
 
     elif self.current_token['type'] in (TokenType.WIN, TokenType.FAIL):
@@ -556,14 +556,30 @@ class Parser:
 
   def string_literal(self):
     res = ParseResult()
-    token = self.current_token
-
-    if token['type'] == TokenType.STRING:
-      self.advance() # Eat
-
-      return res.success(StringNode(token))
-
-    return res.failure(InvalidSyntaxError(token, 'Expected a string!'))
+    
+    # Expect opening quote
+    if self.current_token['type'] != TokenType.QUOTE:
+      return res.failure(InvalidSyntaxError(self.current_token, 'Expected opening quote for string!'))
+    
+    self.advance()  # Eat opening quote
+    
+    # Get string content (could be empty string)
+    if self.current_token['type'] == TokenType.STRING:
+      string_token = self.current_token
+      self.advance()  # Eat string content
+    elif self.current_token['type'] == TokenType.QUOTE:
+      # Empty string case - create a token with empty value
+      string_token = {'type': TokenType.STRING, 'value': '', 'line': self.current_token['line'], 'col': self.current_token['col']}
+    else:
+      return res.failure(InvalidSyntaxError(self.current_token, 'Expected string content or closing quote!'))
+    
+    # Expect closing quote
+    if self.current_token['type'] != TokenType.QUOTE:
+      return res.failure(InvalidSyntaxError(self.current_token, 'Expected closing quote for string!'))
+    
+    self.advance()  # Eat closing quote
+    
+    return res.success(StringNode(string_token))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def arithmetic_binary_operation(self):
@@ -602,7 +618,7 @@ class Parser:
       res.node = res.register(self.arithmetic_binary_operation())
     elif token['type'] == TokenType.IDENTIFIER:
       res.node = res.register(self.variable_literal())
-    elif token['type'] in (TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.NOOB):
+    elif token['type'] in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.NOOB):
       # Any literal can be used in arithmetic (will be implicitly typecast by interpreter)
       res.node = res.register(self.literal())
 
@@ -793,8 +809,8 @@ class Parser:
       operands.append(first_operand)
 
       # Continue while there's a + or AN separator
-      while self.current_token['type'] in (TokenType.EXCLAMATION, TokenType.AN):
-        self.advance() # Eat '+' or 'AN'
+      while self.current_token['type'] in (TokenType.EXCLAMATION, TokenType.AN, TokenType.PLUS):
+        self.advance() # Eat '!', 'AN', or '+'
 
         additional_operand = res.register(self.expression())
         if res.error: return res
@@ -1023,7 +1039,7 @@ class Parser:
         self.advance()
 
         # Error
-        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
+        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
           return res.failure(InvalidSyntaxError(self.current_token, "Expected a literal for switch case!"))
 
         # Eat
