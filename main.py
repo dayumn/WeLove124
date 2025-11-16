@@ -1,5 +1,5 @@
 from src.lexer import tokenizer
-from src.parser.parser_new import Parser
+from src.parser.parser import Parser
 
 def print_tokens(tokens):
     """Print tokens in a readable format."""
@@ -11,8 +11,8 @@ def print_tokens(tokens):
 def main():
     base = "test/project-testcases"
     files = [
-        f"{base}/test_simple.lol"
-        # f"{base}/01_variables.lol",
+        # f"{base}/test_simple.lol"
+        f"{base}/01_variables.lol",
         # f"{base}/02_gimmeh.lol",
         # f"{base}/03_arith.lol",
         # f"{base}/04_smoosh_assign.lol",
