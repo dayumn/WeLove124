@@ -260,17 +260,48 @@ class ProgramNode:
 #------------------------------------------------------------------------------------------------
 
 class Error:
-    def __init__(self, token, details, error_name):
-        self.token = token
-        self.details = details
-        self.error_name = error_name
-    
-    def as_string(self):
-        return f"{self.error_name}: '{self.token['value']}' at line {self.token['line']}\nDetails: {self.details}\n"
+  def __init__(self, token, details, error_name):
+      self.token = token
+      self.details = details
+      self.error_name = error_name
+  
+  def as_string(self):
+      return f"{self.error_name}: '{self.token['value']}' at line {self.token['line']}\nDetails: {self.details}\n"
 
 class InvalidSyntaxError(Error):
-    def __init__(self, token, details):
-        super().__init__(token, details, error_name='Invalid Syntax')
+  def __init__(self, token, details, expected=None, found=None, category=None, context_kind=None, start_token=None, failing_token=None):
+    # token retained for backward compatibility (primary pointer)
+    super().__init__(token, details, error_name='Invalid Syntax')
+    self.expected = expected
+    self.found = found
+    self.category = category
+    self.context_kind = context_kind
+    self.start_token = start_token or token
+    self.failing_token = failing_token or token
+
+  def as_string(self):
+    base_cat = self.category or (self.start_token.get('category') if isinstance(self.start_token, dict) else None) or (self.start_token.get('type').value if isinstance(self.start_token, dict) else 'UNKNOWN')
+    lexeme = self.start_token['value'] if isinstance(self.start_token, dict) else '<UNKNOWN>'
+    line = self.start_token['line'] if isinstance(self.start_token, dict) else 0
+    expected_part = ''
+    if self.expected is not None:
+      if isinstance(self.expected, (list, tuple)):
+        expected_part = f"Expected one of [{', '.join(self.expected)}]"
+      else:
+        expected_part = f"Expected {self.expected}"
+    found_part = ''
+    if self.found is not None:
+      found_part = f"Found {self.found}"
+    detail_core = ' | '.join([p for p in [expected_part, found_part] if p])
+    if detail_core:
+      msg = f"Invalid Syntax: {base_cat} '{lexeme}' line {line} | {detail_core}"
+    else:
+      msg = f"Invalid Syntax: {base_cat} '{lexeme}' line {line} | {self.details}"
+    return msg + "\n"
+
+class RuntimeError(Error):
+  def __init__(self, token, details):
+    super().__init__(token, details, error_name='Runtime Error')
 
     
 #------------------------------------------------------------------------------------------------
@@ -283,6 +314,31 @@ class Parser:
     self.token_index = -1
     self.advance()
 
+  # Standardized error factory
+  def syntax_error(self, start_token, expected, found=None, category=None, context_kind=None, failing_token=None):
+    # Normalize expected and found
+    if found is None:
+      if self.current_token is None:
+        found = 'end of input'
+      else:
+        found = self.current_token['value']
+    return InvalidSyntaxError(
+      start_token,
+      details='',
+      expected=expected,
+      found=found,
+      category=category or (start_token.get('category') if isinstance(start_token, dict) else None),
+      context_kind=context_kind,
+      start_token=start_token,
+      failing_token=failing_token or self.current_token
+    )
+
+  def peek(self, offset=1):
+    index = self.token_index + offset
+    if 0 <= index < len(self.tokens):
+      return self.tokens[index]
+    return None
+
   def advance(self):
     self.token_index += 1
     if (self.token_index < len(self.tokens)):
@@ -292,19 +348,21 @@ class Parser:
   def parse(self):
     res = ParseResult()
     sections = []
-
+    start = self.current_token if self.current_token else {'value':'<START>','line':1,'type':'<START>','category':'Start'}
     if (self.current_token['type'] != TokenType.HAI):
-      return res.failure(InvalidSyntaxError(self.current_token, "Expected a 'HAI' Keyword!"))
+      return res.failure(InvalidSyntaxError(start, "Missing program start", expected='HAI', found=(self.current_token['value'] if self.current_token else 'end of input'), category='Program Delimiter', context_kind='program', start_token=start))
 
     self.advance() # Eat HAI
 
     # Check if there's a variable section
     if self.current_token['type'] == TokenType.WAZZUP:
       self.advance() # Eat Wazzup
-
       variable_declaration_section =  res.register(self.variable_section())
       if variable_declaration_section is None: return res   # Check if there's an error
       sections.append(variable_declaration_section)         # No error
+    # If we see a variable declaration outside of WAZZUP
+    elif self.current_token['type'] == TokenType.I_HAS_A:
+      return res.failure(InvalidSyntaxError(self.current_token, "Var decl outside WAZZUP", expected=['WAZZUP','statement'], found='I HAS A', category='Variable Declaration', context_kind='program', start_token=self.current_token))
 
     # try to parse statements
     list_of_statements = res.register(self.statement_list())
@@ -318,7 +376,7 @@ class Parser:
     res = ParseResult()
     variable_declarations = []
 
-    while (self.current_token['type'] != TokenType.BUHBYE and self.current_token != self.tokens[-1]):
+    while (self.current_token['type'] != TokenType.BUHBYE and self.token_index < len(self.tokens) - 1):
       variable_declaration = res.register(self.variable_declaration())
 
       # Has error
@@ -329,7 +387,7 @@ class Parser:
 
     # Error
     if (self.current_token['type'] != TokenType.BUHBYE):
-      return res.failure(InvalidSyntaxError(self.current_token, "Expected a 'BUHBYE' or keyword!"))
+      return res.failure(InvalidSyntaxError(self.current_token, "Unterminated WAZZUP section", expected='BUHBYE', found=(self.current_token['value']), category='Variable List Delimiter', context_kind='variable_section', start_token=self.current_token))
 
     # No error
     self.advance() # Eat BUHBYE
@@ -344,7 +402,7 @@ class Parser:
       self.advance() # eats I has a
 
       if (self.current_token['type'] != TokenType.IDENTIFIER):
-        return res.failure(InvalidSyntaxError(prev_token, "Expected Identifier!"))
+        return res.failure(self.syntax_error(prev_token, 'IDENTIFIER', self.current_token['value'], category='Variable Declaration', context_kind='var_decl'))
 
       var_name_token = self.current_token
       self.advance() # eats var name
@@ -360,11 +418,11 @@ class Parser:
 
       # Check if expression is None (ITZ without a value)
       if expression is None:
-        return res.failure(InvalidSyntaxError(itz_token, "Expected a value after 'ITZ'!"))
+        return res.failure(self.syntax_error(itz_token, 'expression', self.current_token['value'], category='Variable Assignment', context_kind='var_decl'))
 
       return res.success(VarDeclarationNode(var_name_token, expression))
 
-    return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'I HAS A' or 'BUHBYE' Keyword!"))
+    return res.failure(self.syntax_error(self.current_token, ['I HAS A','BUHBYE'], self.current_token['value'], category='Variable Section', context_kind='var_section'))
 
   def variable_literal(self):
     res = ParseResult()
@@ -380,7 +438,7 @@ class Parser:
     res = ParseResult()
     statements = []
 
-    while (self.current_token['type'] != TokenType.KTHXBYE and self.current_token !=self.tokens[-1]):
+    while (self.current_token['type'] != TokenType.KTHXBYE and self.token_index < len(self.tokens) - 1):
       statement = res.register(self.statement())
 
       # Has error
@@ -390,7 +448,7 @@ class Parser:
       statements.append(statement)
 
     if (self.current_token['type'] != TokenType.KTHXBYE):
-      return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'KTHXBYE' keyword!"))
+      return res.failure(InvalidSyntaxError(self.current_token, "Unterminated program body", expected='KTHXBYE', found=self.current_token['value'], category='Code Delimiter', context_kind='program_body', start_token=self.current_token))
 
     return res.success(StatementListNode(statements))
 
@@ -439,7 +497,7 @@ class Parser:
     if res.error or res.node: return res
 
     # Can't parse
-    return res.failure(InvalidSyntaxError(self.current_token, 'Unexpected Syntax'))
+    return res.failure(InvalidSyntaxError(self.current_token, 'Unexpected Syntax', expected='statement', found=self.current_token['value'], category='Statement', context_kind='statement', start_token=self.current_token))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def expression(self):
@@ -563,7 +621,7 @@ class Parser:
 
       return res.success(StringNode(token))
 
-    return res.failure(InvalidSyntaxError(token, 'Expected a string!'))
+    return res.failure(self.syntax_error(token, 'STRING', token['value'], category='Yarn Literal', context_kind='string_literal'))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def arithmetic_binary_operation(self):
@@ -575,20 +633,23 @@ class Parser:
     self.advance() # Eath
 
     # Parse the left operand
-    left = res.register(self.arithmetic_expression())  # Recursive call to handle the left side
+    left = res.register(self.arithmetic_expression())
     if res.error: return res
+    if left is None:
+      return res.failure(self.syntax_error(operation, 'left operand expression', category='Arithmetic Operation', context_kind='arithmetic'))
 
     # check for 'AN' keyword
     if self.current_token['type'] != TokenType.AN:
-        # print(self.current_token['value'])
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'AN' keyword!"))
+      return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Arithmetic Operation', context_kind='arithmetic'))
 
     # Advance past the 'AN' keyword
     self.advance()
 
     # Parse the right operand which may also be an expression
-    right = res.register(self.arithmetic_expression())  # Recursive call to handle right side
+    right = res.register(self.arithmetic_expression())
     if res.error: return res
+    if right is None:
+      return res.failure(self.syntax_error(operation, 'right operand expression', category='Arithmetic Operation', context_kind='arithmetic'))
 
     # Return an operation node with left and right operands
     return res.success(ArithmeticBinaryOpNode(left, operation, right))
@@ -651,7 +712,7 @@ class Parser:
 
       # Expect AN
       if self.current_token['type'] != TokenType.AN:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected 'AN' keyword!"))
+        return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Boolean Multi-Operand', context_kind='boolean_any_all'))
 
       # Don't eat AN yet - let multi_expression_nestable handle it
 
@@ -662,7 +723,7 @@ class Parser:
 
       # Expect MKAY
       if self.current_token['type'] != TokenType.MKAY:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected 'MKAY' keyword!"))
+        return res.failure(self.syntax_error(operation, 'MKAY', self.current_token['value'], category='Boolean Multi-Operand', context_kind='boolean_any_all'))
 
       self.advance() # Eat MKAY
 
@@ -695,10 +756,12 @@ class Parser:
       # Parse the left operand (nestable_expr)
       left = res.register(self.nestable_expr())
       if res.error: return res
+      if left is None:
+        return res.failure(self.syntax_error(operation, 'left operand expression', category='Boolean Operation', context_kind='boolean_binary'))
 
       # Check for 'AN' keyword
       if self.current_token['type'] != TokenType.AN:
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'AN' keyword!"))
+        return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Boolean Operation', context_kind='boolean_binary'))
 
       # Advance past the 'AN' keyword
       self.advance()
@@ -706,6 +769,8 @@ class Parser:
       # Parse the right operand (nestable_expr)
       right = res.register(self.nestable_expr())
       if res.error: return res
+      if right is None:
+        return res.failure(self.syntax_error(operation, 'right operand expression', category='Boolean Operation', context_kind='boolean_binary'))
 
       # Return an operation node with left and right operands
       return res.success(BooleanBinaryOpNode(left, operation, right))
@@ -720,6 +785,8 @@ class Parser:
       # Parse the operand (nestable_expr)
       operand = res.register(self.nestable_expr())
       if res.error: return res
+      if operand is None:
+        return res.failure(self.syntax_error(operation, 'operand expression', category='Boolean Operation', context_kind='boolean_unary'))
 
       return res.success(BooleanUnaryOpNode(operation, operand))
 
@@ -733,7 +800,7 @@ class Parser:
       return res.success(BooleanNode(token))
 
     # Error
-    return res.failure(InvalidSyntaxError(token, 'Expected boolean!'))
+    return res.failure(self.syntax_error(token, 'WIN or FAIL', token['value'], category='Boolean Value', context_kind='boolean_literal'))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def comparison_operation(self):
@@ -748,10 +815,12 @@ class Parser:
       # Parse the left operand (nestable_expr)
       left = res.register(self.nestable_expr())
       if res.error: return res
+      if left is None:
+        return res.failure(self.syntax_error(operation, 'left operand expression', category='Comparison', context_kind='comparison'))
 
       # Check for 'AN' keyword
       if self.current_token['type'] != TokenType.AN:
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected 'AN' keyword!"))
+        return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Comparison', context_kind='comparison'))
 
       # Advance past the 'AN' keyword
       self.advance()
@@ -762,10 +831,14 @@ class Parser:
         # This is a relational operation
         right = res.register(self.arithmetic_binary_operation())
         if res.error: return res
+        if right is None:
+          return res.failure(self.syntax_error(operation, 'right operand expression', category='Comparison', context_kind='comparison'))
       else:
         # Regular comparison
         right = res.register(self.nestable_expr())
         if res.error: return res
+        if right is None:
+          return res.failure(self.syntax_error(operation, 'right operand expression', category='Comparison', context_kind='comparison'))
 
       # Return an operation node with left and right operands
       return res.success(ComparisonOpNode(left, operation, right))
@@ -788,7 +861,8 @@ class Parser:
 
       # Check if expression returned None (empty VISIBLE statement)
       if first_operand is None:
-        return res.failure(InvalidSyntaxError(self.current_token, "Empty VISIBLE Statement. To print a blank string use VISIBLE \"\""))
+        visible_tok = self.peek(-1) or self.current_token
+        return res.failure(self.syntax_error(visible_tok, 'expression operand', visible_tok['value'], category='Output Keyword', context_kind='print'))
 
       operands.append(first_operand)
 
@@ -830,7 +904,7 @@ class Parser:
           self.advance() # Eat desired type
           return res.success(TypecastNode(source_value, desired_type))
         else:
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected a type literal (NOOB, TROOF, NUMBAR, NUMBR, YARN)!"))
+          return res.failure(self.syntax_error(self.current_token, ['NOOB','TROOF','NUMBAR','NUMBR','YARN'], self.current_token['value'], category='Type Literal', context_kind='typecast'))
 
       else:
         # MAEK <expr> A <type> syntax
@@ -840,7 +914,7 @@ class Parser:
 
         # Expect 'A' keyword
         if self.current_token['type'] != TokenType.A:
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected 'A' keyword after MAEK!"))
+          return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'A', self.current_token['value'], category='Typecast', context_kind='typecast'))
 
         self.advance() # Eat A
 
@@ -850,7 +924,7 @@ class Parser:
           self.advance() # Eat desired type
           return res.success(TypecastNode(source_value, desired_type))
         else:
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected a type literal (NOOB, TROOF, NUMBAR, NUMBR, YARN)!"))
+          return res.failure(self.syntax_error(self.current_token, ['NOOB','TROOF','NUMBAR','NUMBR','YARN'], self.current_token['value'], category='Type Literal', context_kind='typecast'))
 
     return res
 
@@ -865,7 +939,18 @@ class Parser:
 
       # Check for 'R' keyword
       if self.current_token['type'] not in (TokenType.R, TokenType.IS_NOW_A):
-        # If there's no R or IS NOW A, then it might just be a variable access
+        # If next token looks like start of an expression, treat as missing assignment operator
+        expr_start_types = {
+          TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, TokenType.DIFF_OF,
+          TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF, TokenType.BOTH_OF,
+          TokenType.EITHER_OF, TokenType.WON_OF, TokenType.NOT, TokenType.BOTH_SAEM,
+          TokenType.DIFFRINT, TokenType.I_IZ, TokenType.MAEK, TokenType.INTEGER,
+          TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.NOOB,
+          TokenType.SMOOSH, TokenType.ALL_OF, TokenType.ANY_OF
+        }
+        if self.current_token['type'] in expr_start_types:
+          return res.failure(self.syntax_error(var_to_access, ['R','IS NOW A'], self.current_token['value'], category='Assignment', context_kind='assignment'))
+        # Otherwise treat as simple variable access (standalone)
         return res.success(VarAccessNode(var_to_access))
 
 
@@ -877,7 +962,8 @@ class Parser:
 
         # Check for errors
         if value_to_assign is None:
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected a value to assign!"))
+          r_token = self.peek(-1) or var_to_access
+          return res.failure(self.syntax_error(r_token, 'expression', (self.current_token['value'] if self.current_token else 'end of input'), category='Assignment Operator', context_kind='assignment'))
 
         return res.success(VarAssignmentNode(var_to_access, value_to_assign))
 
@@ -886,7 +972,7 @@ class Parser:
         self.advance() # Eat IS NOW A
 
         if self.current_token['value'] not in ("NUMBAR", "NUMBR", "YARN", "TROOF"):
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected a type to cast the value!"))
+          return res.failure(self.syntax_error(self.current_token, ['NUMBAR','NUMBR','YARN','TROOF'], self.current_token['value'], category='Type Literal', context_kind='assignment_typecast'))
 
         # Else, continue
         desired_type = self.current_token['value']
@@ -906,7 +992,7 @@ class Parser:
 
       # Error
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a variable to store input!"))
+        return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'IDENTIFIER', self.current_token['value'], category='Input Keyword', context_kind='input'))
 
       # Check if the variable name is valid
       variable_to_access = res.register(self.variable_literal())
@@ -943,7 +1029,7 @@ class Parser:
 
       # Parse if_true: YA RLY <linebreak> <statement_list> <linebreak>
       if self.current_token['type'] != TokenType.YA_RLY:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected 'YA RLY' keyword!"))
+        return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'YA RLY', self.current_token['value'], category='Conditional', context_kind='if'))
 
       self.advance() # Eat YA RLY
 
@@ -989,7 +1075,7 @@ class Parser:
 
       # Expect OIC
       if self.current_token['type'] != TokenType.OIC:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected 'OIC' keyword!"))
+        return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'OIC', self.current_token['value'], category='Conditional', context_kind='if'))
 
       self.advance() # Eat OIC
 
@@ -1014,7 +1100,7 @@ class Parser:
 
       # Error
       if self.current_token['type'] != TokenType.OMG:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'OMG' keyword!"))
+        return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'OMG', self.current_token['value'], category='Switch Start', context_kind='switch'))
 
       while self.current_token['type'] == TokenType.OMG:
         statements = []
@@ -1024,7 +1110,7 @@ class Parser:
 
         # Error
         if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
-          return res.failure(InvalidSyntaxError(self.current_token, "Expected a literal for switch case!"))
+          return res.failure(self.syntax_error(self.current_token, 'literal', self.current_token['value'], category='Switch Case', context_kind='switch'))
 
         # Eat
         case_condition = res.register(self.literal())
@@ -1048,7 +1134,7 @@ class Parser:
       # Loop end
 
       if self.current_token['type'] != TokenType.OMGWTF:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a default case for switch case!"))
+        return res.failure(self.syntax_error(self.current_token, 'OMGWTF', self.current_token['value'], category='Switch Default', context_kind='switch'))
 
       # Eat OMGWTF
       self.advance()
@@ -1064,7 +1150,7 @@ class Parser:
         default_case_statements.append(statement)
 
       if self.current_token['type'] != TokenType.OIC:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'OIC' keyword!"))
+        return res.failure(self.syntax_error(self.current_token, 'OIC', self.current_token['value'], category='Switch Terminator', context_kind='switch'))
 
       # Eat OIC
       self.advance()
@@ -1087,14 +1173,14 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a label for the loop!"))
+        return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'loop label IDENTIFIER', self.current_token['value'], category='Loop Start', context_kind='loop'))
 
       label = self.current_token['value']
       # Eat label
       self.advance()
 
       if self.current_token['type'] not in (TokenType.UPPIN, TokenType.NERFIN):
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an operation for the loop condition!"))
+        return res.failure(self.syntax_error(self.current_token, ['UPPIN','NERFIN'], self.current_token['value'], category='Loop Operation', context_kind='loop'))
 
       # Else, no error
       operation = self.current_token
@@ -1103,7 +1189,7 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.YR:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a 'YR' keyword for the loop!"))
+        return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Loop Clause', context_kind='loop'))
 
       # Else, no error
       # Eat YR
@@ -1111,7 +1197,7 @@ class Parser:
 
       # Var
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a variable for the loop!"))
+        return res.failure(self.syntax_error(self.current_token, 'loop variable IDENTIFIER', self.current_token['value'], category='Loop Variable', context_kind='loop'))
 
       # Get the desired variable to access (same with assignment statement)
       variable = self.current_token
@@ -1144,13 +1230,13 @@ class Parser:
 
       # Loop out
       if self.current_token['type'] != TokenType.IM_OUTTA_YR:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'IM OUTTA YR' keyword!"))
+        return res.failure(self.syntax_error(self.current_token, 'IM OUTTA YR', self.current_token['value'], category='Loop Terminator', context_kind='loop'))
 
       # Eat IM OUTTA YR
       self.advance()
 
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a label to exit the loop!"))
+        return res.failure(self.syntax_error(self.current_token, 'loop exit label IDENTIFIER', self.current_token['value'], category='Loop Terminator', context_kind='loop'))
 
       out_label = self.current_token['value']
 
@@ -1159,7 +1245,7 @@ class Parser:
 
       # print(label, out_label)
       if label != out_label:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a similar label to exit the loop!"))
+        return res.failure(self.syntax_error(self.current_token, label, out_label, category='Loop Terminator', context_kind='loop'))
 
 
       return res.success(LoopNode(label, operation, variable, clause_type, til_wile_expression, body_statements))
@@ -1179,7 +1265,7 @@ class Parser:
 
       # Identifier
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a valid function name!"))
+        return res.failure(self.syntax_error(self.current_token, 'function name IDENTIFIER', self.current_token['value'], category='Function Definition', context_kind='function_def'))
 
       function_name = self.current_token
       # Eat function name
@@ -1202,7 +1288,7 @@ class Parser:
 
           # Expect YR
           if self.current_token['type'] != TokenType.YR:
-            return res.failure(InvalidSyntaxError(self.current_token, "Expected 'YR' after 'AN'!"))
+            return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Function Parameters', context_kind='function_def'))
 
           self.advance() # Eat YR
 
@@ -1228,7 +1314,7 @@ class Parser:
         body_statements.append(return_expression)
 
       if self.current_token['type'] != TokenType.IF_U_SAY_SO:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'IF U SAY SO' keyword!"))
+        return res.failure(self.syntax_error(self.current_token, 'IF U SAY SO', self.current_token['value'], category='Function Terminator', context_kind='function_def'))
 
       # Eat IF U SAY SO
       self.advance()
@@ -1249,7 +1335,7 @@ class Parser:
 
       # Identifier
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected a valid function name!"))
+        return res.failure(self.syntax_error(self.current_token, 'function name IDENTIFIER', self.current_token['value'], category='Function Call', context_kind='function_call'))
 
       function_name = res.register(self.expression())
       if function_name is None: return res
@@ -1271,7 +1357,7 @@ class Parser:
 
           # Expect YR
           if self.current_token['type'] != TokenType.YR:
-            return res.failure(InvalidSyntaxError(self.current_token, "Expected 'YR' after 'AN'!"))
+            return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Function Call Parameters', context_kind='function_call'))
 
           self.advance() # Eat YR
 
@@ -1282,7 +1368,7 @@ class Parser:
 
       # function body
       if self.current_token['type'] != TokenType.MKAY:
-        return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'MKAY' keyword!"))
+        return res.failure(self.syntax_error(self.current_token, 'MKAY', self.current_token['value'], category='Function Call Terminator', context_kind='function_call'))
 
       # Eat MKAY
       self.advance()
