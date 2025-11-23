@@ -457,14 +457,55 @@ class Interpreter:
       # Get user input directly using input() function
       user_input_value = str(input())
 
-      # Create a proper token dict for StringNode
-      user_input_token = {
-        'type': TokenType.STRING,
-        'value': user_input_value,
-        'line': variable.var_name_token['line'],
-        'col': 0
-      }
-      user_input = StringNode(user_input_token)
+      # Try to infer the type from the input
+      # First try integer
+      try:
+        int_value = int(user_input_value)
+        user_input_token = {
+          'type': TokenType.INTEGER,
+          'value': int_value,
+          'line': variable.var_name_token['line'],
+          'col': 0
+        }
+        user_input = IntegerNode(user_input_token)
+      except ValueError:
+        # Try float
+        try:
+          float_value = float(user_input_value)
+          user_input_token = {
+            'type': TokenType.FLOAT,
+            'value': float_value,
+            'line': variable.var_name_token['line'],
+            'col': 0
+          }
+          user_input = FloatNode(user_input_token)
+        except ValueError:
+          # Check for boolean literals
+          if user_input_value == "WIN":
+            user_input_token = {
+              'type': TokenType.WIN,
+              'value': "WIN",
+              'line': variable.var_name_token['line'],
+              'col': 0
+            }
+            user_input = BooleanNode(user_input_token)
+          elif user_input_value == "FAIL":
+            user_input_token = {
+              'type': TokenType.FAIL,
+              'value': "FAIL",
+              'line': variable.var_name_token['line'],
+              'col': 0
+            }
+            user_input = BooleanNode(user_input_token)
+          else:
+            # Default to string
+            user_input_token = {
+              'type': TokenType.STRING,
+              'value': user_input_value,
+              'line': variable.var_name_token['line'],
+              'col': 0
+            }
+            user_input = StringNode(user_input_token)
 
       # Assign the user input to the variable in the symbol table
       value = res.register(self.visit(VarAssignmentNode(variable.var_name_token, user_input), context))
