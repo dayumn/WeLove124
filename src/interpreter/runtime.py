@@ -29,7 +29,6 @@ class SymbolTable:
         self.symbols = {}
         self.parent = parent
 
-    
     def get(self, name):
         value = self.symbols.get(name, None)
         if value == None and self.parent:

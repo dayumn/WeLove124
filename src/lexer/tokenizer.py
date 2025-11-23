@@ -77,6 +77,7 @@ class TokenType(Enum):
     EXCLAMATION = "EXCLAMATION"
     QUOTE = "QUOTE"
     PLUS = "PLUS"
+    MEBBE = "MEBBE"
 
 # Token specification with patterns
 TOKEN_SPEC = [
@@ -140,6 +141,7 @@ TOKEN_SPEC = [
     (TokenType.WILE, r'WILE'),
     (TokenType.GTFO, r'GTFO'),
     (TokenType.MKAY, r'MKAY'),
+    (TokenType.MEBBE, r'MEBBE'),
     
     # Type keywords
     (TokenType.NOOB, r'NOOB'),

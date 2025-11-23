@@ -18,14 +18,14 @@ def main():
         # f"{base}/test_simple.lol"
         f"{base}/01_variables.lol",
         # f"{base}/02_gimmeh.lol",
-        f"{base}/03_arith.lol",
-        f"{base}/04_smoosh_assign.lol",
-        f"{base}/05_bool.lol",
-        f"{base}/06_comparison.lol",
-        f"{base}/07_ifelse.lol",
-        f"{base}/08_switch.lol",
-        f"{base}/09_loops.lol",
-        f"{base}/10_functions.lol",
+        # f"{base}/03_arith.lol",
+        # f"{base}/04_smoosh_assign.lol",
+        # f"{base}/05_bool.lol",
+        # f"{base}/06_comparison.lol",
+        # f"{base}/07_ifelse.lol",
+        # f"{base}/08_switch.lol",
+        # f"{base}/09_loops.lol",
+        # f"{base}/10_functions.lol",
     ]
 
     for path in files:
@@ -56,10 +56,10 @@ def main():
             lolcode_interpreter = Interpreter()
             context = Context('<program>')
             context.symbol_table = SymbolTable()
-            result = lolcode_interpreter.visit(AST.node, context)
+            lolcode_interpreter.visit(AST.node, context)
 
-            if result.error:
-                print(f"\nRuntime Error: {result.error}")
+            # if result.error:
+            #     print(f"\nRuntime Error: {result.error}")
             # else:
             #     print(f"\nProgram executed successfully")
             

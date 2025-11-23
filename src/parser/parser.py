@@ -193,7 +193,7 @@ class SwitchCaseNode:
   def __repr__(self):
     return f"SwitchCases({self.cases_statements})"
 
-class IfNode:
+class IfNode: 
   def __init__(self, if_block_statements, else_block_statements, mebbe_cases=None):
     self.if_block_statements = if_block_statements
     self.else_block_statements = else_block_statements

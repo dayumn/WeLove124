@@ -339,6 +339,7 @@ class Number(Value):
   def is_float(value_to_check):
     return bool(re.match(r'^-?\d*\.\d*$', str(value_to_check)))
 
+  #Implement Implicit Typecase here
   def __repr__(self):
     return str(self.value)
 
@@ -447,8 +448,8 @@ class Function(Value):
 
     return res.success(value)
 
-  def typecast(self, target_class): return True
-  def explicit_typecast(self, target_class, to_float=False): return True
+#   def typecast(self, target_class): return True
+#   def explicit_typecast(self, target_class, to_float=False): return True
 
   def __repr__(self):
     return f"<function {self.function_name}>"
