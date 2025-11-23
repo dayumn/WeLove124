@@ -1,12 +1,18 @@
 import os
 import sys
-from PyQt5.QtGui import QFont, QKeySequence
+import queue
+import threading
+from PyQt5.QtGui import QFont, QKeySequence, QTextCursor, QTextCharFormat, QColor
 from PyQt5.QtWidgets import (QWidget, QApplication, QMainWindow, QFileDialog,
-                            QHBoxLayout, QVBoxLayout,QTextEdit,
+                            QHBoxLayout, QVBoxLayout,QTextEdit, QLineEdit,
                             QShortcut, QInputDialog, QPushButton,
                             QTableWidget, QTableWidgetItem, QHeaderView)
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal, QObject, QEventLoop
 from src.lexer import tokenizer
+from src.parser.parser import Parser
+from src.interpreter.runtime import SymbolTable, Context
+from src.interpreter.interpreter import Interpreter
+from src.interpreter.values import Number, String, Boolean, Noob, Function
 
 
 # For managing persistence
@@ -21,6 +27,119 @@ class FileManager: # for filename
 class LexemeManager: # for lexeme tokens
     def __init__(self):
         self.saved_lexemes = None
+
+class InteractiveConsole(QTextEdit):
+    """Interactive console widget that handles input/output in a single text area"""
+    input_requested = pyqtSignal()
+    
+    def __init__(self):
+        super().__init__()
+        self.input_queue = queue.Queue()
+        self.waiting_for_input = False
+        self.input_buffer = ""
+        self.input_start_pos = 0
+        self.input_requested.connect(self._request_input_slot)
+        self.setup_ui()
+    
+    def setup_ui(self):
+        console_font = QFont("Consolas", 10)
+        self.setFont(console_font)
+        self.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1E1E;
+                color: #FAFAFA;
+                border: none;
+                padding: 10px;
+            }
+        """)
+        self.setReadOnly(False)
+    
+    def write(self, text, color="#FAFAFA"):
+        """Write text to console output"""
+        cursor = self.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        
+        # Set text color
+        format = QTextCharFormat()
+        format.setForeground(QColor(color))
+        cursor.setCharFormat(format)
+        
+        cursor.insertText(text + "\n")
+        self.setTextCursor(cursor)
+        self.ensureCursorVisible()
+    
+    def clear(self):
+        """Clear console output"""
+        super().clear()
+        self.waiting_for_input = False
+        self.input_buffer = ""
+    
+    def _request_input_slot(self):
+        """Enable input mode (called from main thread via signal)"""
+        self.waiting_for_input = True
+        self.input_buffer = ""
+        self.input_start_pos = self.textCursor().position()
+        self.setReadOnly(False)
+        self.setFocus()
+    
+    def request_input(self):
+        """Request input - can be called from any thread"""
+        self.input_requested.emit()
+    
+    def keyPressEvent(self, event):
+        """Handle key press events for input"""
+        if not self.waiting_for_input:
+            # Prevent editing when not waiting for input
+            event.ignore()
+            return
+        
+        cursor = self.textCursor()
+        
+        # Prevent editing previous content
+        if cursor.position() < self.input_start_pos:
+            cursor.setPosition(self.input_start_pos)
+            self.setTextCursor(cursor)
+        
+        if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            # Get the input from the current line
+            cursor.movePosition(QTextCursor.End)
+            cursor.setPosition(self.input_start_pos, QTextCursor.KeepAnchor)
+            user_input = cursor.selectedText()
+            
+            # Move to end and add newline
+            cursor.clearSelection()
+            cursor.movePosition(QTextCursor.End)
+            cursor.insertText("\n")
+            self.setTextCursor(cursor)
+            
+            # Disable input mode
+            self.waiting_for_input = False
+            self.setReadOnly(True)
+            
+            # Put input in queue
+            self.input_queue.put(user_input)
+            event.accept()
+        elif event.key() == Qt.Key_Backspace:
+            # Prevent backspace from deleting past the input start
+            if cursor.position() <= self.input_start_pos:
+                event.ignore()
+                return
+            super().keyPressEvent(event)
+        else:
+            super().keyPressEvent(event)
+    
+    def get_input(self):
+        """Get input from queue (blocking but processes events)"""
+        # Request input (signal will trigger on main thread)
+        self.request_input()
+        
+        # Wait for input with event processing
+        while self.input_queue.empty():
+            QApplication.processEvents()
+            import time
+            time.sleep(0.01)  # Small sleep to prevent busy waiting
+        
+        return self.input_queue.get()
 
 
 def text_edit(text_editor, file_manager, content_manager, parent_widget): # Text editor panel
@@ -69,22 +188,80 @@ def save_input(text_input, file_manager, parent_widget): # Save as <filename>.tx
     
     return text_content
 
-def execute_code(content_manager, lexeme_manager, token_table,  identifier_table): # Func for calling tokenizer
+def execute_code(content_manager, lexeme_manager, token_table, symbol_table, console_widget): # Func for calling tokenizer, parser, and interpreter
     if content_manager.saved_content is None:
-        print("Error: Please save the file first (Ctrl+S)")
+        console_widget.write("Error: Please save the file first (Ctrl+S)", "#FF6B6B")
         return
-    try:  
-        result = tokenizer.tokenize(content_manager.saved_content) # call tokenizer
-        print("Tokenization result:", result)
+    
+    def run_interpreter():
+        """Run interpreter - output and input are sequential"""
+        try:  
+            # Tokenization
+            console_widget.write("=== LOLCODE INTERPRETER ===", "#4ECDC4")
+            tokens = tokenizer.tokenize(content_manager.saved_content)
+            lexeme_manager.saved_lexemes = tokens
+            console_widget.write(f"Tokenization complete: {len(tokens)} tokens", "#95E1D3")
+            update_token_view(token_table, tokens)
+            
+            # Parsing
+            parser = Parser(tokens)
+            AST = parser.parse()
+            
+            if AST.error:
+                console_widget.write(f"Parse Error: {AST.error}", "#FF6B6B")
+                return
+            
+            console_widget.write("Parsing complete", "#95E1D3")
+            
+            # Interpretation
+            symbol_table_obj = SymbolTable()
+            context = Context('<program>')
+            context.symbol_table = symbol_table_obj
+            
+            lolcode_interpreter = Interpreter()
+            console_widget.write("--- Program Output ---", "#4ECDC4")
+            
+            # Custom print function that writes to console
+            import builtins
+            original_print = builtins.print
+            original_input = builtins.input
+            
+            def console_print(*args, **kwargs):
+                """Custom print that writes to console widget"""
+                text = ' '.join(str(arg) for arg in args)
+                console_widget.write(text, "#FAFAFA")
+            
+            # Replace print and input
+            builtins.print = console_print
+            builtins.input = lambda: console_widget.get_input()
+            
+            try:
+                result = lolcode_interpreter.visit(AST.node, context)
+            finally:
+                # Restore original functions
+                builtins.print = original_print
+                builtins.input = original_input
+            
+            # Check for runtime errors
+            if result and result.error:
+                console_widget.write(f"Runtime Error: {result.error}", "#FF6B6B")
+            else:
+                console_widget.write("Execution complete", "#95E1D3")
+            
+            # Update symbol table display
+            update_symbol_table(symbol_table, symbol_table_obj)
 
-        lexeme_manager.saved_lexemes = result
-        print("Generating lexemes...")
-        
-        update_token_view(token_table, result)
-        # update_token_view(identifier_table,) !! INSERT RESULT HERE FROM INTERPRETER !!
-
-    except Exception as e:
-        print(f"Error during tokenization: {e}")
+        except Exception as e:
+            console_widget.write(f"Error: {str(e)}", "#FF6B6B")
+            import traceback
+            console_widget.write(traceback.format_exc(), "#FF6B6B")
+    
+    # Clear console and start execution in a thread
+    console_widget.clear()
+    
+    # Run in separate thread to prevent GUI blocking
+    thread = threading.Thread(target=run_interpreter, daemon=True)
+    thread.start()
 
 
 
@@ -152,15 +329,37 @@ def update_token_view(table, lexemes): # update table with the lexemes/identifie
                 description = item.get('category', '')
                 table.setItem(row_position, 0, QTableWidgetItem(str(lexeme)))
                 table.setItem(row_position, 1, QTableWidgetItem(str(description)))
+
+
+def update_symbol_table(table, symbol_table_obj): # update symbol table display
+    table.setRowCount(0)
     
-    # if lexemes is a dictionary (for symbol table)
-    elif isinstance(lexemes, dict):
-        for lexeme, description in lexemes.items(): 
+    # Type mapping from Python classes to LOLCODE types
+    type_map = {
+        'Number': lambda v: 'NUMBR' if isinstance(v.value, int) else 'NUMBAR',
+        'String': lambda v: 'YARN',
+        'Boolean': lambda v: 'TROOF',
+        'Noob': lambda v: 'NOOB',
+        'Function': lambda v: 'FUNCTION'
+    }
+    
+    if symbol_table_obj and symbol_table_obj.symbols:
+        for var_name, value in symbol_table_obj.symbols.items():
             row_position = table.rowCount()
             table.insertRow(row_position)
             
-            table.setItem(row_position, 0, QTableWidgetItem(str(lexeme)))
-            table.setItem(row_position, 1, QTableWidgetItem(str(description)))
+            # Get value representation
+            value_str = str(value)
+            
+            # Get type
+            type_name = type(value).__name__
+            lolcode_type = type_map.get(type_name, lambda v: 'UNKNOWN')(value) if type_name in type_map else type_name
+            
+            # Create display string
+            display_value = f"{value_str} ({lolcode_type})"
+            
+            table.setItem(row_position, 0, QTableWidgetItem(var_name))
+            table.setItem(row_position, 1, QTableWidgetItem(display_value))
 
 
 def file_open(text_input, file_manager, content_manager, file_button): # open file and load content
@@ -195,22 +394,28 @@ def layout(win):
     lexeme_manager = LexemeManager()
     
     main_layout = QVBoxLayout()
-    side_layout = QHBoxLayout()
-    minor_layout = QVBoxLayout()
+    main_horizontal = QHBoxLayout()  # Left and right columns
+    left_column = QVBoxLayout()
+    right_column = QVBoxLayout()
     main_widget.setLayout(main_layout)
 
+    # Left column widgets
     text_editor = QWidget() # text editor
-    file_searcher = QPushButton('Open File') # add dynamic name instead of open file later
-    token_view_widget = QWidget() # lexeme tokens view
-    terminal = QWidget() # terminal
-    identifier_view_widget = QWidget() # symbol viewer
+    file_searcher = QPushButton('Open File')
+    
+    # Right column widgets
+    symbol_table_widget = QWidget() # symbol table (top right)
+    token_view_widget = QWidget() # lexeme tokens view (bottom right)
+    
+    # Bottom widgets - Interactive Console
+    console = InteractiveConsole()
     
     # create text editor first
     text_input = text_edit(text_editor, file_manager, content_manager, win)
     
-    # create lexeme and identifier table
+    # create symbol table and lexeme table
+    symbol_table = create_table(symbol_table_widget, "Identifier", "Value")
     token_table = create_table(token_view_widget, "Lexeme", "Classification")
-    identifier_table = create_table(identifier_view_widget, "Identifier", "Value")
 
     execute_button = QPushButton("Execute", win) # execute button
     
@@ -246,27 +451,29 @@ def layout(win):
 
     text_editor.setStyleSheet("background-color: #1E1E1E;")
     token_view_widget.setStyleSheet("background-color: #1A1A1A;")
-    terminal.setStyleSheet("background-color: #1F1F1F;")
-    identifier_view_widget.setStyleSheet("background-color: #1F1F1F;")
+    symbol_table_widget.setStyleSheet("background-color: #1F1F1F;")
     ###### STYLE ###########
 
     # buttons
-    execute_button.clicked.connect(lambda: execute_code(content_manager, lexeme_manager, token_table, identifier_table)) # execs code, calls parser, add symbol manager
-    file_searcher.clicked.connect(lambda: file_open(text_input, file_manager, content_manager, file_searcher)) # prompts file search
+    execute_button.clicked.connect(lambda: execute_code(content_manager, lexeme_manager, token_table, symbol_table, console))
+    file_searcher.clicked.connect(lambda: file_open(text_input, file_manager, content_manager, file_searcher))
 
-  
-    # minor layout
-    minor_layout.addWidget(file_searcher, 1)
-    minor_layout.addWidget(text_editor,2)
+    # Left column layout (text editor with file button)
+    left_column.addWidget(file_searcher, 0)
+    left_column.addWidget(text_editor, 1)
 
-    side_layout.addLayout(minor_layout,2)
-    side_layout.addWidget(token_view_widget,1)
-    side_layout.addWidget(identifier_view_widget,1)
+    # Right column layout (symbol table on top, lexeme table on bottom)
+    right_column.addWidget(symbol_table_widget, 1)
+    right_column.addWidget(token_view_widget, 1)
 
-    # vertical layout
-    main_layout.addLayout(side_layout,2)
-    main_layout.addWidget(execute_button,1)
-    main_layout.addWidget(terminal,1)
+    # Main horizontal layout (left and right columns)
+    main_horizontal.addLayout(left_column, 3)  # Text editor takes more space
+    main_horizontal.addLayout(right_column, 2)  # Tables column
+
+    # Main vertical layout
+    main_layout.addLayout(main_horizontal, 3)  # Top section
+    main_layout.addWidget(execute_button, 0)    # Execute button
+    main_layout.addWidget(console, 1)            # Interactive console at bottom
 
 
 
