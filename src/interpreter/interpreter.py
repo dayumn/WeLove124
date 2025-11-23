@@ -337,33 +337,38 @@ class Interpreter:
     clause_type = node.clause_type
     til_wile_expression = node.til_wile_expression
     body_statements = node.body_statements
-
-    termination_condition = None
+    
+    # Get the variable name from the token
+    var_name = variable['value']
 
     # Proceed to the loop
     is_running = True
     while is_running:
+      # Check termination condition BEFORE executing the body
       if (clause_type and til_wile_expression != None):
         termination_condition = res.register(self.visit(til_wile_expression, context))
         if res.error: return res
+        
+        # Convert termination_condition to boolean if needed
+        termination_condition_bool, error = termination_condition.typecast(Boolean)
+        if error: return res.failure(error)
 
-      # Distinguish TIL with WILE
-      # The TIL <expression> clause will repeat the loop as long as <expression> is FAIL.
-      if (
-          clause_type == TokenType.TIL and
-          termination_condition is not None and
-          termination_condition.value == True
-      ):
-        break
-      
-      # The WILE <expression> clause will repeat the loop as long as <expression> returns WIN.
-      if (
-          clause_type == TokenType.WILE and
-          termination_condition is not None and
-          termination_condition.value == False
-      ):
-        break
+        # Distinguish TIL with WILE
+        # The TIL <expression> clause will repeat the loop as long as <expression> is FAIL.
+        if (
+            clause_type == TokenType.TIL and
+            termination_condition_bool.value == True
+        ):
+          break
+        
+        # The WILE <expression> clause will repeat the loop as long as <expression> returns WIN.
+        if (
+            clause_type == TokenType.WILE and
+            termination_condition_bool.value == False
+        ):
+          break
 
+      # Execute loop body
       for statement in body_statements:
         statement_value = res.register(self.visit(statement, context))
         if res.error: return res
@@ -372,15 +377,27 @@ class Interpreter:
           is_running = False
           break
       
-      # Incrementor/Decrementor
-      iterator = res.register(self.visit(VarAccessNode(variable), context))
-      if iterator is None: return res
-      if operation['type'] == TokenType.UPPIN:
-        iterator.value += 1
-      else:
-        iterator.value -= 1
+      # If break was encountered, exit the loop
+      if not is_running:
+        break
       
-      res.register(self.visit(VarAssignmentNode(variable, IntegerNode((iterator.value, None, variable['line']))), context))
+      # Incrementor/Decrementor - directly update the value in the symbol table
+      iterator = context.symbol_table.get(var_name)
+      if iterator is None:
+        return res.failure(RuntimeError(variable, f"Variable '{var_name}' is not defined"))
+      
+      # Typecast to Number if needed
+      iterator, error = iterator.typecast(Number)
+      if error: return res.failure(error)
+      
+      # Update the value based on operation
+      if operation['type'] == TokenType.UPPIN:
+        new_value = Number(iterator.value + 1)
+      else:  # NERFIN
+        new_value = Number(iterator.value - 1)
+      
+      # Set the new value in the symbol table
+      context.symbol_table.set(var_name, new_value)
 
     return res.success(label)
 

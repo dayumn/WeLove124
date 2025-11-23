@@ -16,7 +16,7 @@ def main():
     base = "test/project-testcases"
     files = [
         # f"{base}/test_simple.lol"
-        f"{base}/01_variables.lol",
+        # f"{base}/01_variables.lol",
         # f"{base}/02_gimmeh.lol",
         # f"{base}/03_arith.lol",
         # f"{base}/04_smoosh_assign.lol",
@@ -24,7 +24,7 @@ def main():
         # f"{base}/06_comparison.lol",
         # f"{base}/07_ifelse.lol",
         # f"{base}/08_switch.lol",
-        # f"{base}/09_loops.lol",
+        f"{base}/09_loops.lol",
         # f"{base}/10_functions.lol",
     ]
 
