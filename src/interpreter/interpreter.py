@@ -177,7 +177,7 @@ class Interpreter:
 
       string_value += str(operand_value.value)
     
-    return res.success(string_value)
+    return res.success(String(string_value))
 
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit_VarAccessNode(self, node, context):
@@ -226,7 +226,9 @@ class Interpreter:
     for statement in node.statements:
       implicit_value = res.register(self.visit(statement, context))
       if res.error: return res
-      context.symbol_table.set('IT', implicit_value)  # update the IT variable
+      # Only update IT with actual values, not with None or control flow markers
+      if implicit_value is not None and not isinstance(implicit_value, (Break, Return)):
+        context.symbol_table.set('IT', implicit_value)  # update the IT variable
     return res.success(None)
   
   # ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -249,7 +251,8 @@ class Interpreter:
     
     print(print_value)
 
-    return res.success(print_value)
+    # VISIBLE does not update IT variable, so return None
+    return res.success(None)
 
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit_TypecastNode(self, node, context):
@@ -264,10 +267,10 @@ class Interpreter:
       converted_value, error = source_value.explicit_typecast(Number)
     elif desired_type == "NUMBAR":    # Float
       converted_value, error = source_value.explicit_typecast(Number, True)
-    elif desired_type == "TROOF":    # Float
+    elif desired_type == "TROOF":    # Boolean
       converted_value, error = source_value.explicit_typecast(Boolean)  
-    elif desired_type == "YARN":    # Float
-      converted_value, error = source_value.explicit_typecast(Boolean)  
+    elif desired_type == "YARN":    # String
+      converted_value, error = source_value.explicit_typecast(String)  
 
     if error: return res.failure(error)
 
@@ -439,8 +442,10 @@ class Interpreter:
 
       parameters_to_pass.append(par)
 
-    return_value = function_to_call.execute(parameters_to_pass)
-    return res.success(return_value.value)
+    return_value = res.register(function_to_call.execute(parameters_to_pass))
+    if res.error: return res
+    
+    return res.success(return_value if return_value is not None else Noob())
 
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit_InputNode(self, node, context):
@@ -477,6 +482,15 @@ class Interpreter:
     break_token = node.break_token
     return_value = Break(break_token['value']).set_context(context)
     return res.success(return_value)
+
+  # ───────────────────────────────────────────────────────────────────────────────────────────────
+  def visit_ReturnNode(self, node, context):
+    res = RTResult()
+    
+    return_value = res.register(self.visit(node.return_expression, context))
+    if res.error: return res
+    
+    return res.success(Return(return_value).set_context(context))
 
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit_ProgramNode(self, node, context):

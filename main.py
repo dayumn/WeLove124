@@ -15,7 +15,6 @@ def print_tokens(tokens):
 def main():
     base = "test/project-testcases"
     files = [
-        # f"{base}/test_simple.lol"
         # f"{base}/01_variables.lol",
         # f"{base}/02_gimmeh.lol",
         # f"{base}/03_arith.lol",
@@ -24,8 +23,8 @@ def main():
         # f"{base}/06_comparison.lol",
         # f"{base}/07_ifelse.lol",
         # f"{base}/08_switch.lol",
-        f"{base}/09_loops.lol",
-        # f"{base}/10_functions.lol",
+        # f"{base}/09_loops.lol",
+        f"{base}/10_functions.lol",
     ]
 
     for path in files:
@@ -56,10 +55,25 @@ def main():
             lolcode_interpreter = Interpreter()
             context = Context('<program>')
             context.symbol_table = SymbolTable()
-            lolcode_interpreter.visit(AST.node, context)
+            result = lolcode_interpreter.visit(AST.node, context)
+            
+            # Print symbol table for debugging
+            print("\n=== SYMBOL TABLE ===")
+            for name, value in context.symbol_table.symbols.items():
+                # Map Python type names to LOLCODE type names
+                type_map = {
+                    'Number': 'NUMBR/NUMBAR',
+                    'String': 'YARN',
+                    'Boolean': 'TROOF',
+                    'Noob': 'NOOB',
+                    'Function': 'FUNCTION'
+                }
+                lolcode_type = type_map.get(type(value).__name__, type(value).__name__)
+                print(f"{name}: {value} ({lolcode_type})")
 
-            # if result.error:
-            #     print(f"\nRuntime Error: {result.error}")
+            if result.error:
+                print(f"\n=== RUNTIME ERROR ===")
+                print(f"Error: {result.error}")
             # else:
             #     print(f"\nProgram executed successfully")
             

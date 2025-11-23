@@ -160,28 +160,58 @@ class Value:
   
   # Comparison
   def is_equal(self, other):
-    # Typecast the second operand to the data type of the first operand before checking if they're equal
-    other, error = other.typecast(self.__class__)
-    if error: return None, error
+    # If both are same type, compare directly
+    if self.__class__ == other.__class__:
+      result = self.value == other.value
+      return Boolean(result).set_context(self.context), None
+    
+    # Try to typecast the second operand to the data type of the first operand
+    other_converted, error = other.typecast(self.__class__)
+    if error:
+      # If typecast fails, they're not equal
+      return Boolean(False).set_context(self.context), None
 
-    result = self.value == other.value
-
-    return Boolean(result).set_context(self.context) , None
+    result = self.value == other_converted.value
+    return Boolean(result).set_context(self.context), None
 
   def is_not_equal(self, other):
-    # Typecast the second operand to the data type of the first operand before checking if they're not equal
-    other, error = other.typecast(self.__class__)
-    if error: return None, error
+    # If both are same type, compare directly
+    if self.__class__ == other.__class__:
+      result = self.value != other.value
+      return Boolean(result).set_context(self.context), None
+    
+    # Try to typecast the second operand to the data type of the first operand
+    other_converted, error = other.typecast(self.__class__)
+    if error:
+      # If typecast fails, they're not equal
+      return Boolean(True).set_context(self.context), None
 
-    result = self.value != other.value
-
-    return Boolean(result).set_context(self.context) , None
+    result = self.value != other_converted.value
+    return Boolean(result).set_context(self.context), None
 
   def __repr__(self):
     return str(self.value)  
 
 
 class Break(Value):
+  def __init__(self, value, line_number=None):
+    self.value = value
+    self.line_number = line_number
+    self.set_context()
+    super().__init__(line_number)
+
+  def set_context(self, context=None):
+    self.context = context
+    return self
+
+  # Typecasting method (to be implemented in subclasses)
+  def typecast(self, target_class): pass
+
+  # Explicit Typecasting method (to be implemented in subclasses)
+  def explicit_typecast(self, target_class, to_float=False): pass
+
+
+class Return(Value):
   def __init__(self, value, line_number=None):
     self.value = value
     self.line_number = line_number
@@ -274,6 +304,42 @@ class String(Value):
   # No change with implicit typecasting
   def explicit_typecast(self, target_class, to_float=False):
     return self.typecast(target_class)
+
+  # Override maximum for string comparison (lexicographic or numeric if possible)
+  def maximum(self, other):
+    # Try to convert both to numbers first
+    self_num, err1 = self.typecast(Number)
+    other_num, err2 = other.typecast(Number)
+    
+    if err1 is None and err2 is None:
+      # Both can be converted to numbers, use numeric comparison
+      result = max(self_num.value, other_num.value)
+      return Number(result).set_context(self.context), None
+    
+    # If can't convert to numbers, use lexicographic comparison
+    other_str, error = other.typecast(String)
+    if error: return None, error
+    
+    result = max(self.value, other_str.value)
+    return String(result).set_context(self.context), None
+
+  # Override minimum for string comparison (lexicographic or numeric if possible)
+  def minimum(self, other):
+    # Try to convert both to numbers first
+    self_num, err1 = self.typecast(Number)
+    other_num, err2 = other.typecast(Number)
+    
+    if err1 is None and err2 is None:
+      # Both can be converted to numbers, use numeric comparison
+      result = min(self_num.value, other_num.value)
+      return Number(result).set_context(self.context), None
+    
+    # If can't convert to numbers, use lexicographic comparison
+    other_str, error = other.typecast(String)
+    if error: return None, error
+    
+    result = min(self.value, other_str.value)
+    return String(result).set_context(self.context), None
 
   def __repr__(self):
     return str(self.value) 
@@ -442,11 +508,16 @@ class Function(Value):
       value = res.register(interpreter.visit(statement, new_context))
       if res.error: return res
 
+      # Check for early return (FOUND YR)
+      if isinstance(value, Return):
+        return res.success(value.value)
+      
+      # Check for GTFO (break)
       if isinstance(value, Break):
         value = Noob()
         break
 
-    return res.success(value)
+    return res.success(value if value is not None else Noob())
 
 #   def typecast(self, target_class): return True
 #   def explicit_typecast(self, target_class, to_float=False): return True

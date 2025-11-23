@@ -247,6 +247,13 @@ class BreakNode:
   def __repr__(self):
     return f"BREAK"
 
+class ReturnNode:
+  def __init__(self, return_expression):
+    self.return_expression = return_expression
+
+  def __repr__(self):
+    return f'RETURN({self.return_expression})'
+
 class ProgramNode:
   def __init__(self, sections):
     self.sections = sections
@@ -1241,7 +1248,7 @@ class Parser:
         return_expression  = res.register(self.expression())
         if return_expression is None: return res # Has error
 
-        body_statements.append(return_expression)
+        body_statements.append(ReturnNode(return_expression))
 
       if self.current_token['type'] != TokenType.IF_U_SAY_SO:
         return res.failure(InvalidSyntaxError(self.current_token, "Expected an 'IF U SAY SO' keyword!"))
