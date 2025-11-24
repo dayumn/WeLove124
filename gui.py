@@ -320,52 +320,8 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
         console_widget.write("Error: Please save the file first (Ctrl+S)", "#FF6B6B")
         return
     
-    # find all GIMMEH statements before running interpreter
-    gimmeh_variables = []
-    lines = content_manager.saved_content.split('\n')
-    
-    for line in lines:
-        line_stripped = line.strip()
-        if line_stripped.startswith("GIMMEH"):
-            parts = line_stripped.split()
-            if len(parts) >= 2:
-                variable_name = parts[1]
-                gimmeh_variables.append(variable_name)  # keep all, even duplicates
-    
-    # prompt for all GIMMEH statements upfront
-    gimmeh_inputs = []
-    if gimmeh_variables:
-        var_list = ", ".join(gimmeh_variables)
-        user_input, ok = QInputDialog.getText(
-            None,
-            'GIMMEH',
-            f'Enter values for ({var_list}) separated by commas:'
-        )
-        
-        if ok and user_input:
-            values = [v.strip() for v in user_input.split(',')]
-            
-            if len(values) == len(gimmeh_variables):
-                gimmeh_inputs = values  # store as list in order
-                console_widget.write(f"GIMMEH inputs: {gimmeh_inputs}", "#95E1D3")
-            else:
-                console_widget.write(f"Error: Expected {len(gimmeh_variables)} values, got {len(values)}", "#FF6B6B")
-                return
-        else:
-            console_widget.write("Input cancelled", "#FF6B6B")
-            return
-    
-    # append gimmeh values to content
-    content = content_manager.saved_content
-    for value in gimmeh_inputs:
-        content += "\n" + value
-    
-    # temporarily update content for execution
-    original_content = content_manager.saved_content
-    content_manager.saved_content = content
-    
     def run_interpreter():
-        """Run interpreter - output and input are sequential"""
+        """Run interpreter - output and input are sequential in the console"""
         try:  
             # Tokenization
             console_widget.write("=== LOLCODE INTERPRETER ===", "#4ECDC4")
@@ -379,8 +335,7 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
             AST = parser.parse()
             
             if AST.error:
-                console_widget.write(f"Parse Error: {AST.error}", "#FF6B6B")
-                content_manager.saved_content = original_content  # restore
+                console_widget.write(f"Parse Error: {AST.error.as_string()}", "#FF6B6B")
                 return
             
             console_widget.write("Parsing complete", "#95E1D3")
@@ -401,7 +356,20 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
             def console_print(*args, **kwargs):
                 """Custom print that writes to console widget"""
                 text = ' '.join(str(arg) for arg in args)
-                console_widget.write(text, "#FAFAFA")
+                # Handle special case where text might have no newline
+                end = kwargs.get('end', '\n')
+                if end == '\n':
+                    console_widget.write(text, "#FAFAFA")
+                else:
+                    # Write without newline
+                    cursor = console_widget.textCursor()
+                    cursor.movePosition(QTextCursor.End)
+                    format = QTextCharFormat()
+                    format.setForeground(QColor("#FAFAFA"))
+                    cursor.setCharFormat(format)
+                    cursor.insertText(text)
+                    console_widget.setTextCursor(cursor)
+                    console_widget.ensureCursorVisible()
             
             # Replace print and input
             builtins.print = console_print
@@ -416,21 +384,18 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
             
             # Check for runtime errors
             if result and result.error:
-                console_widget.write(f"Runtime Error: {result.error}", "#FF6B6B")
+                error_msg = result.error.as_string() if hasattr(result.error, 'as_string') else str(result.error)
+                console_widget.write(error_msg, "#FF6B6B")
             else:
-                console_widget.write("Execution complete", "#95E1D3")
+                console_widget.write("\n=== Execution complete ===", "#95E1D3")
             
             # Update symbol table display
             update_symbol_table(symbol_table, symbol_table_obj)
-            
-            # Restore original content
-            content_manager.saved_content = original_content
 
         except Exception as e:
             console_widget.write(f"Error: {str(e)}", "#FF6B6B")
             import traceback
             console_widget.write(traceback.format_exc(), "#FF6B6B")
-            content_manager.saved_content = original_content  # restore
     
     # Clear console and start execution in a thread
     console_widget.clear()
