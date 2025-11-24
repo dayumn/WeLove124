@@ -309,6 +309,20 @@ class InvalidSyntaxError(Error):
 class RuntimeError(Error):
   def __init__(self, token, details):
     super().__init__(token, details, error_name='Runtime Error')
+  
+  def as_string(self):
+    # Handle different token formats
+    if isinstance(self.token, dict):
+      line = self.token.get('line', 'unknown')
+      value = self.token.get('value', '<unknown>')
+      return f"\n{'='*50}\nRUNTIME ERROR at line {line}\n{'='*50}\n{self.details}\nLocation: '{value}'\n{'='*50}\n"
+    elif isinstance(self.token, tuple):
+      # Handle tuple format: (category, subcategory, line_number)
+      category = self.token[0] if len(self.token) > 0 else 'Unknown'
+      line = self.token[2] if len(self.token) > 2 else 'unknown'
+      return f"\n{'='*50}\nRUNTIME ERROR at line {line}\n{'='*50}\n{self.details}\nCategory: {category}\n{'='*50}\n"
+    else:
+      return f"\n{'='*50}\nRUNTIME ERROR\n{'='*50}\n{self.details}\n{'='*50}\n"
 
     
 #------------------------------------------------------------------------------------------------
@@ -967,11 +981,12 @@ class Parser:
       # Check for 'R' keyword
       if self.current_token['type'] not in (TokenType.R, TokenType.IS_NOW_A):
         # If next token looks like start of an expression, treat as missing assignment operator
+        # Note: I_IZ is NOT included because it starts a new statement, not an expression
         expr_start_types = {
           TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, TokenType.DIFF_OF,
           TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF, TokenType.BOTH_OF,
           TokenType.EITHER_OF, TokenType.WON_OF, TokenType.NOT, TokenType.BOTH_SAEM,
-          TokenType.DIFFRINT, TokenType.I_IZ, TokenType.MAEK, TokenType.INTEGER,
+          TokenType.DIFFRINT, TokenType.MAEK, TokenType.INTEGER,
           TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.NOOB,
           TokenType.SMOOSH, TokenType.ALL_OF, TokenType.ANY_OF
         }
@@ -1393,12 +1408,9 @@ class Parser:
 
           parameters.append(additional_param)
 
-      # function body
-      if self.current_token['type'] != TokenType.MKAY:
-        return res.failure(self.syntax_error(self.current_token, 'MKAY', self.current_token['value'], category='Function Call Terminator', context_kind='function_call'))
-
-      # Eat MKAY
-      self.advance()
+      # MKAY is optional for function calls - only consume it if present
+      if self.current_token['type'] == TokenType.MKAY:
+        self.advance() # Eat MKAY
 
       return res.success(FuncCallNode(function_name, parameters))
 

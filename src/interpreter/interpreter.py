@@ -185,7 +185,7 @@ class Interpreter:
     var_name = node.var_name_token['value']
 
     if not context.symbol_table.found(var_name):
-      return res.failure(RuntimeError(node.var_name_token, f"'{var_name} is not defined!'"))
+      return res.failure(RuntimeError(node.var_name_token, f"Variable '{var_name}' is not defined.\nMake sure you declared it with 'I HAS A {var_name}' before using it."))
     
     value = context.symbol_table.get(var_name)
     return res.success(value)
@@ -215,7 +215,7 @@ class Interpreter:
     value_to_assign = res.register(self.visit(node.value_to_assign, context))
 
     if not context.symbol_table.found(var_to_access['value']):
-      return res.failure(RuntimeError(var_to_access, f"'{var_to_access['value']} is not defined!'"))
+      return res.failure(RuntimeError(var_to_access, f"Cannot assign to undefined variable '{var_to_access['value']}'.\nDeclare it first with 'I HAS A {var_to_access['value']}'."))
 
     context.symbol_table.set(var_to_access['value'], value_to_assign)
     return res.success(value_to_assign)
@@ -387,7 +387,7 @@ class Interpreter:
       # Incrementor/Decrementor - directly update the value in the symbol table
       iterator = context.symbol_table.get(var_name)
       if iterator is None:
-        return res.failure(RuntimeError(variable, f"Variable '{var_name}' is not defined"))
+        return res.failure(RuntimeError(variable, f"Cannot store input in undefined variable '{var_name}'.\nDeclare it first with 'I HAS A {var_name}'."))
       
       # Typecast to Number if needed
       iterator, error = iterator.typecast(Number)

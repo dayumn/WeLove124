@@ -7,7 +7,7 @@ HAI
     BUHBYE
     
     HOW IZ I addNum YR x AN YR y
-        FOUND YR SUM OF x an y
+        FOUND YR SUM OF x AN y
     IF U SAY SO
 
     HOW IZ I printName YR person
@@ -22,14 +22,14 @@ HAI
     GIMMEH num1
     GIMMEH num2
 
-    I IZ addNum YR num1 AN YR num2
+    I IZ addNum YR num1 AN YR num2 MKAY
     VISIBLE IT
 
     GIMMEH name
-    I IZ printName YR name
+    I IZ printName YR name MKAY
     VISIBLE IT
 
-    I IZ printNum YR SUM OF x AN 2
+    I IZ printNum YR SUM OF x AN 2 MKAY
     VISIBLE IT
 
 KTHXBYE

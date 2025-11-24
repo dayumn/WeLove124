@@ -67,7 +67,8 @@ class Value:
 
     if other.value == 0:
       return None, RuntimeError(
-        ('Result is Zero', None, other.line_number), 'Division by Zero'
+        ('Division Error', None, other.line_number), 
+        'Cannot divide by zero.\nThe divisor must be a non-zero number.'
       )
     
     result = self.value / other.value
@@ -245,7 +246,8 @@ class Noob(Value):
     
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot implicitly convert {self.__class__.__name__} ({self.value}) to {target_class.__name__}.\nUse explicit typecasting with MAEK or IS NOW A."
       )
 
   # Explicit typecasting of NOOBs is allowed and results to empty/zero values depending on the type.
@@ -265,7 +267,8 @@ class Noob(Value):
 
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot convert {self.__class__.__name__} to {target_class.__name__}.\nThis type conversion is not supported."
       )
 
   def __repr__(self):
@@ -298,7 +301,8 @@ class String(Value):
 
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot implicitly convert String '{self.value}' to {target_class.__name__}.\nThe string format is incompatible with the target type."
       )
 
   # No change with implicit typecasting
@@ -367,7 +371,8 @@ class Number(Value):
     
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot implicitly convert Number ({self.value}) to {target_class.__name__}.\nThis type conversion is not supported."
       )
   
   def explicit_typecast(self, target_class, to_float=False):
@@ -396,7 +401,8 @@ class Number(Value):
     
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot convert Number ({self.value}) to {target_class.__name__}.\nThis type conversion is not supported."
       )
 
   def is_integer(value_to_check):
@@ -438,7 +444,8 @@ class Boolean(Value):
 
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot implicitly convert Boolean ({self.get_value_representation()}) to {target_class.__name__}.\nThis type conversion is not supported."
       )
 
   # Casting WIN to a numerical type results in 1 or 1.0.
@@ -458,7 +465,8 @@ class Boolean(Value):
 
     # Error
     return None, RuntimeError(
-        ('Typecast error', None, self.line_number), f"Can't Typecast {self.__class__.__name__}: {self.value}  to {target_class.__name__}"
+        ('Typecast Error', None, self.line_number), 
+        f"Cannot convert Boolean ({self.get_value_representation()}) to {target_class.__name__}.\nThis type conversion is not supported."
       ) 
   
   def get_value_representation(self):
@@ -485,25 +493,25 @@ class Function(Value):
 
     if len(passed_parameters) > len(self.parameters):
       return res.failure(RuntimeError(
-        ("Function", "Function", None),
-        f"{len(passed_parameters) - len(self.parameters)} too many parameters passed into {self}"
+        ("Function Call", "Function", None),
+        f"Too many arguments for function '{self.function_name}'.\nExpected {len(self.parameters)} parameter(s), but got {len(passed_parameters)}.\nExtra arguments: {len(passed_parameters) - len(self.parameters)}"
       ))
     
     if len(passed_parameters) < len(self.parameters):
       return res.failure(RuntimeError(
-        self.pos_start, self.pos_end,
-        f"{len(self.parameters) - len(passed_parameters)} too few parameters passed into {self}"
+        ("Function Call", "Function", None),
+        f"Not enough arguments for function '{self.function_name}'.\nExpected {len(self.parameters)} parameter(s), but got {len(passed_parameters)}.\nMissing arguments: {len(self.parameters) - len(passed_parameters)}"
       ))
     
     for i in range(len(passed_parameters)):
       param_name = self.parameters[i]
-      param_name
       param_value = passed_parameters[i]
 
       param_value.set_context(new_context)
       new_context.symbol_table.set(param_name, param_value)
       
-    value = None
+    return_value = Noob()  # Default return value
+    
     for statement in self.body_statements:
       value = res.register(interpreter.visit(statement, new_context))
       if res.error: return res
@@ -512,12 +520,15 @@ class Function(Value):
       if isinstance(value, Return):
         return res.success(value.value)
       
-      # Check for GTFO (break)
+      # Check for GTFO (break) - in a function, acts like return with NOOB
       if isinstance(value, Break):
-        value = Noob()
-        break
+        return res.success(Noob())
+      
+      # Update return_value to the last expression result (ignoring None)
+      if value is not None and not isinstance(value, (Break, Return)):
+        return_value = value
 
-    return res.success(value if value is not None else Noob())
+    return res.success(return_value)
 
 #   def typecast(self, target_class): return True
 #   def explicit_typecast(self, target_class, to_float=False): return True
