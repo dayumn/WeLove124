@@ -597,21 +597,21 @@ def layout(win):
 
     ######### FILE SEARCHER WIDGETS #########  
     menu_btn = QPushButton()
-    menu_btn.setFixedSize(15,15)
+    menu_btn.setFixedSize(25,25)
     menu_btn.setIcon(QIcon('src/assets/hamburger.png'))
-    menu_btn.setIconSize(QSize(15,15))
+    menu_btn.setIconSize(QSize(25,25))
     menu_btn.setFlat(True)
 
     file_icon = QLabel()
-    file_icon.setFixedSize(21,21)
+    file_icon.setFixedSize(25,25)
     icon = QPixmap('src/assets/folder.png')
-    icon = icon.scaled(21,21,Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    icon = icon.scaled(25,25,Qt.KeepAspectRatio, Qt.SmoothTransformation)
     file_icon.setPixmap(icon)
 
     exec_btn = QPushButton()
-    exec_btn.setFixedSize(21,21)
+    exec_btn.setFixedSize(25,25)
     exec_btn.setIcon(QIcon('src/assets/play-button.png'))
-    exec_btn.setIconSize(QSize(21,21))
+    exec_btn.setIconSize(QSize(25,25))
     exec_btn.setFlat(True)
     
     # create menu
@@ -630,6 +630,12 @@ def layout(win):
     tab_widget = QTabWidget()
     tab_widget.setTabsClosable(True)
     tab_widget.setMovable(True)
+
+    # set font
+     # set default application font
+    font = QFont("San Francisco", 10)  
+    tab_widget.setFont(font)
+
     
     file_searcher = QPushButton('Open File') 
     file_searcher_layout.addWidget(menu_btn,1)
@@ -654,10 +660,7 @@ def layout(win):
             border: none;
             background-color: #1E1E1E;
         }
-        QTabBar {
-            font-family: 'Consolas', 'Segoe UI', sans-serif;
-            font-size: 11px;
-        }
+        
         QTabBar::tab {
             background-color: #2D2D2D;
             color: #CCCCCC;
@@ -727,6 +730,11 @@ def layout(win):
 def main():
     app = QApplication(sys.argv)
     win = QMainWindow()
+
+     # Set default application font
+    font = QFont("San Francisco", 10) 
+    app.setFont(font)
+    app.setWindowIcon(QIcon('src/assets/lolcode.png'))
     win.setGeometry(0, 0, 600, 400)
     win.setWindowTitle("WeLove124")
     win.setStyleSheet("""
