@@ -319,14 +319,36 @@ class Interpreter:
     basis_value, error = basis.typecast(Boolean)
     if error: return res.failure(error)
 
+    # Check YA RLY (if) condition
     if (basis_value.value):
       for statement in node.if_block_statements:
         statement_value = res.register(self.visit(statement, context))
         if res.error: return res
     else:
-      for statement in node.else_block_statements:
-        statement_value = res.register(self.visit(statement, context))
+      # Check MEBBE (else if) conditions in order
+      mebbe_executed = False
+      for mebbe_condition, mebbe_statements in node.mebbe_cases:
+        # Evaluate the MEBBE condition
+        condition_value = res.register(self.visit(mebbe_condition, context))
         if res.error: return res
+        
+        # Convert to boolean
+        condition_bool, error = condition_value.typecast(Boolean)
+        if error: return res.failure(error)
+        
+        # If condition is true, execute this MEBBE block and stop
+        if condition_bool.value:
+          for statement in mebbe_statements:
+            statement_value = res.register(self.visit(statement, context))
+            if res.error: return res
+          mebbe_executed = True
+          break
+      
+      # If no MEBBE was executed, run NO WAI (else) block
+      if not mebbe_executed:
+        for statement in node.else_block_statements:
+          statement_value = res.register(self.visit(statement, context))
+          if res.error: return res
 
     return res.success(basis)
   
@@ -402,7 +424,8 @@ class Interpreter:
       # Set the new value in the symbol table
       context.symbol_table.set(var_name, new_value)
 
-    return res.success(label)
+    # Loops don't produce a meaningful value, so don't modify IT
+    return res.success(None)
 
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit_FuncDefNode(self, node, context):
