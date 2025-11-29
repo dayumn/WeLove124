@@ -184,27 +184,116 @@ def create_token(token_type, value, line, col):
 }
 
 CATEGORY_MAP = {
+
+    # --- Boolean Values ---
+    TokenType.WIN: "Boolean Value (True)",
+    TokenType.FAIL: "Boolean Value (False)",
+
+    # --- Code Delimiters ---
     TokenType.HAI: "Code Delimiter",
     TokenType.KTHXBYE: "Code Delimiter",
-    TokenType.WAZZUP: "Variable List Delimiter",
-    TokenType.BUHBYE: "Variable List Delimiter",
-    TokenType.I_HAS_A: "Variable Declaration",
-    TokenType.ITZ: "Variable Assignment",
-    TokenType.R: "Assignment Operator",
-    TokenType.VISIBLE: "Output Keyword",
-    TokenType.AN: "Multiple Parameter Separator",
+
+    # --- Comments ---
+    TokenType.COMMENT: "Comment",
+
+    # --- Comparison Operators ---
+    TokenType.BIGGR_OF: "Comparison Operator",
+    TokenType.BOTH_SAEM: "Comparison Operator",
+    TokenType.DIFFRINT: "Comparison Operator",
+    TokenType.SMALLR_OF: "Comparison Operator",
+
+    # --- Data Types ---
     TokenType.NOOB: "Type Literal",
     TokenType.NUMBR: "Type Literal",
     TokenType.NUMBAR: "Type Literal",
     TokenType.YARN: "Type Literal",
     TokenType.TROOF: "Type Literal",
+
+    # --- Flow Control ---
+    TokenType.GTFO: "Flow Control (Break)",
+
+    # --- Function Keywords ---
+    TokenType.HOW_IZ_I: "Function Declaration Keyword",
+    TokenType.IF_U_SAY_SO: "Function End Keyword",
+    TokenType.FOUND_YR: "Function Return Keyword",
+    TokenType.I_IZ: "Function Call Keyword",
+    TokenType.MKAY: "Function Call Terminator",
+
+    # --- Identifiers ---
+    TokenType.IDENTIFIER: "Variable Identifier",
+
+    # --- Input/Output ---
+    TokenType.VISIBLE: "Output Keyword",
+    TokenType.GIMMEH: "Input Keyword",
+
+    # --- Literals ---
+    TokenType.STRING: "Yarn Literal",
     TokenType.INTEGER: "Integer Literal",
     TokenType.FLOAT: "Float Literal",
-    TokenType.STRING: "Yarn Literal",
-    TokenType.WIN: "Boolean Value (True)",
-    TokenType.FAIL: "Boolean Value (False)",
-    TokenType.IDENTIFIER: "Variable Identifier",
+
+    # --- Loop Keywords ---
+    TokenType.IM_IN_YR: "Loop Start Keyword",
+    TokenType.IM_OUTTA_YR: "Loop End Keyword",
+    TokenType.UPPIN: "Loop Increment Keyword",
+    TokenType.NERFIN: "Loop Decrement Keyword",
+    TokenType.YR: "Loop Iterator Keyword",
+    TokenType.TIL: "Loop Until Condition",
+    TokenType.WILE: "Loop While Condition",
+
+    # --- Misc / Symbols ---
+    TokenType.ELLIPSIS: "Ellipsis Operator",
+    TokenType.COMMA: "Comma Separator",
+    TokenType.EXCLAMATION: "Exclamation Symbol",
+    TokenType.PLUS: "Plus Symbol",
     TokenType.QUOTE: "String Delimiter",
+    TokenType.A: "Typecast Helper Keyword",
+
+    # --- Operations: Arithmetic ---
+    TokenType.SUM_OF: "Arithmetic Operator",
+    TokenType.DIFF_OF: "Arithmetic Operator",
+    TokenType.PRODUKT_OF: "Arithmetic Operator",
+    TokenType.QUOSHUNT_OF: "Arithmetic Operator",
+    TokenType.MOD_OF: "Arithmetic Operator",
+
+    # --- Operations: Boolean ---
+    TokenType.BOTH_OF: "Boolean Operator",
+    TokenType.EITHER_OF: "Boolean Operator",
+    TokenType.WON_OF: "Boolean Operator",
+    TokenType.NOT: "Boolean Operator",
+    TokenType.ANY_OF: "Boolean Variadic Operator",
+    TokenType.ALL_OF: "Boolean Variadic Operator",
+
+    # --- Operations: String ---
+    TokenType.SMOOSH: "String Concatenation Operator",
+
+    # --- Operations: Typecasting ---
+    TokenType.MAEK: "Typecast Operator",
+    TokenType.IS_NOW_A: "Explicit Typecast Keyword",
+
+    # --- Switch / Case ---
+    TokenType.WTF: "Switch Keyword",
+    TokenType.OMG: "Switch Case Keyword",
+    TokenType.OMGWTF: "Switch Default Keyword",
+
+    # --- Variable Declaration & Assignment ---
+    TokenType.I_HAS_A: "Variable Declaration",
+    TokenType.ITZ: "Variable Assignment",
+    TokenType.R: "Assignment Operator",
+
+    # --- Variable List Delimiters ---
+    TokenType.WAZZUP: "Variable List Delimiter",
+    TokenType.BUHBYE: "Variable List Delimiter",
+
+    # --- If/Else Branching ---
+    TokenType.O_RLY: "If-Else Keyword",
+    TokenType.YA_RLY: "If Branch Keyword",
+    TokenType.NO_WAI: "Else Branch Keyword",
+    TokenType.MEBBE: "Else-If Keyword",
+    TokenType.OIC: "Conditional/Switch End Keyword",
+
+    # --- Misc operators / helpers ---
+    TokenType.AN: "Multiple Parameter Separator",
+
 }
 
 def tokenize(code):

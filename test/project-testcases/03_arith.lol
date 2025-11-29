@@ -6,6 +6,7 @@ HAI
     BUHBYE
     
     GIMMEH x
+
     GIMMEH y
 
     VISIBLE x + "+" + y + " = " + SUM OF x AN y
