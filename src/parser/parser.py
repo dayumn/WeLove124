@@ -472,6 +472,10 @@ class Parser:
         return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck - no progress made", expected='valid statement', found=self.current_token['value'], category='Statement', context_kind='statement_list', start_token=self.current_token))
 
       statements.append(statement)
+      
+      # Check for comma as soft-command-break (acts as virtual newline)
+      if self.current_token['type'] == TokenType.COMMA:
+        self.advance()  # Eat the comma and continue to next statement
 
     if (self.current_token['type'] != TokenType.KTHXBYE):
       return res.failure(InvalidSyntaxError(self.current_token, "Unterminated program body", expected='KTHXBYE', found=self.current_token['value'], category='Code Delimiter', context_kind='program_body', start_token=self.current_token))
@@ -1082,6 +1086,9 @@ class Parser:
         if res.error: return res
         if statement:
           if_block_statements.append(statement)
+        # Check for comma as soft-command-break
+        if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
 
       # Parse if_false: MEBBE <expression> <linebreak> <statement_list> <linebreak> <if_false> | NO WAI <linebreak> <statement_list> <linebreak> | ε
       mebbe_cases = []  # List of (condition, statements) tuples
@@ -1102,6 +1109,9 @@ class Parser:
           if res.error: return res
           if statement:
             mebbe_statements.append(statement)
+          # Check for comma as soft-command-break
+          if self.current_token['type'] == TokenType.COMMA:
+            self.advance()
 
         mebbe_cases.append((mebbe_condition, mebbe_statements))
 
@@ -1114,6 +1124,9 @@ class Parser:
           if res.error: return res
           if statement:
             else_block_statements.append(statement)
+          # Check for comma as soft-command-break
+          if self.current_token['type'] == TokenType.COMMA:
+            self.advance()
 
       # Expect OIC
       if self.current_token['type'] != TokenType.OIC:
@@ -1151,7 +1164,7 @@ class Parser:
         self.advance()
 
         # Error
-        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
+        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
           return res.failure(self.syntax_error(self.current_token, 'literal', self.current_token['value'], category='Switch Case', context_kind='switch'))
 
         # Eat
@@ -1169,6 +1182,9 @@ class Parser:
             return res
 
           statements.append(statement)
+          # Check for comma as soft-command-break
+          if self.current_token['type'] == TokenType.COMMA:
+            self.advance()
         # Loop end
 
         cases.append(case_condition)
@@ -1190,6 +1206,9 @@ class Parser:
           return res
 
         default_case_statements.append(statement)
+        # Check for comma as soft-command-break
+        if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
 
       if self.current_token['type'] != TokenType.OIC:
         return res.failure(self.syntax_error(self.current_token, 'OIC', self.current_token['value'], category='Switch Terminator', context_kind='switch'))
@@ -1269,6 +1288,9 @@ class Parser:
           return res
 
         body_statements.append(statement)
+        # Check for comma as soft-command-break
+        if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
 
       # Loop out
       if self.current_token['type'] != TokenType.IM_OUTTA_YR:
@@ -1345,6 +1367,9 @@ class Parser:
         if statement is None: return res # Has error
 
         body_statements.append(statement)
+        # Check for comma as soft-command-break
+        if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
 
       if self.current_token['type'] == TokenType.FOUND_YR:
         # Eat FOUND YR
