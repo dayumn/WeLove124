@@ -223,18 +223,66 @@ def tokenize(code):
         
         # Special handling for string content when inside quotes
         if in_string and code[pos] != '"':
-            # Capture all content until the next quote or newline
+            # Capture all content until the next quote, handling escape sequences
             string_start = pos
             string_col = col
-            while pos < len(code) and code[pos] != '"' and code[pos] != '\n':
-                pos += 1
+            string_value = []
             
-            if pos > string_start:
-                value = code[string_start:pos]
+            while pos < len(code) and code[pos] != '"':
+                if code[pos] == ':':
+                    # Check for escape sequences
+                    if pos + 1 < len(code):
+                        next_char = code[pos + 1]
+                        if next_char == ')':
+                            # :) represents newline
+                            string_value.append('\n')
+                            pos += 2
+                            col += 2
+                            continue
+                        elif next_char == '>':
+                            # :> represents tab
+                            string_value.append('\t')
+                            pos += 2
+                            col += 2
+                            continue
+                        elif next_char == 'o':
+                            # :o represents bell/beep (we'll use \a)
+                            string_value.append('\a')
+                            pos += 2
+                            col += 2
+                            continue
+                        elif next_char == '"':
+                            # :" represents literal quote
+                            string_value.append('"')
+                            pos += 2
+                            col += 2
+                            continue
+                        elif next_char == ':':
+                            # :: represents literal colon
+                            string_value.append(':')
+                            pos += 2
+                            col += 2
+                            continue
+                        elif next_char in ('(', '['):
+                            # :( and :[ are for unicode/hex - for now just keep as-is
+                            string_value.append(code[pos])
+                            pos += 1
+                            col += 1
+                            continue
+                
+                # Regular character
+                if code[pos] == '\n':
+                    # Strings can't span multiple lines without escape
+                    break
+                string_value.append(code[pos])
+                pos += 1
+                col += 1
+            
+            if string_value:
+                value = ''.join(string_value)
                 tok = create_token(TokenType.STRING, value, line, string_col)
                 tok['category'] = CATEGORY_MAP.get(TokenType.STRING, TokenType.STRING)
                 tokens.append(tok)
-                col += len(value)
             match_found = True
         else:
             # Try each token pattern
