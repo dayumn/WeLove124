@@ -229,6 +229,10 @@ def tokenize(code):
             while pos < len(code) and code[pos] != '"' and code[pos] != '\n':
                 pos += 1
             
+            # Check if we hit a newline (unclosed string)
+            if pos < len(code) and code[pos] == '\n':
+                raise SyntaxError(f"Unclosed string literal at line {line}, col {string_col}")
+            
             if pos > string_start:
                 value = code[string_start:pos]
                 tok = create_token(TokenType.STRING, value, line, string_col)
@@ -251,6 +255,9 @@ def tokenize(code):
                         # Track when we enter/exit string mode
                         if token_type == TokenType.QUOTE:
                             in_string = not in_string
+                        
+                        if token_type == TokenType.IDENTIFIER and value.startswith(('BTW', 'OBTW', 'TLDR')):
+                            raise SyntaxError(f"Unexpected comment token '{value}' at line {line}, col {col}")
                         
                         tok = create_token(token_type, value, line, col)
                         if tok['type'] in CATEGORY_MAP:

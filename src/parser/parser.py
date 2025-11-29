@@ -504,9 +504,52 @@ class Parser:
     res.node = res.register(self.break_statement())
     if res.error or res.node: return res
 
-    # Try expression (includes assignment with R)
-    res.node = res.register(self.expression())
-    if res.error or res.node: return res
+    # Try expression-statements (operations and assignments lang, not literals)
+    if self.current_token['type'] == TokenType.IDENTIFIER:
+        identifier_token = self.current_token
+        self.advance()
+        
+        if self.current_token['type'] in (TokenType.R, TokenType.IS_NOW_A):
+            # if assignment, backtrack
+            self.token_index -= 1
+            self.current_token = self.tokens[self.token_index]
+            res.node = res.register(self.assignment_statement())
+            if res.error or res.node: return res
+        else:
+            # if identifier looks like existing tokens
+            suspicious_tokens = {
+                TokenType.QUOTE, TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING,
+                TokenType.IDENTIFIER, TokenType.WIN, TokenType.FAIL
+            }
+            if self.current_token['type'] in suspicious_tokens:
+                return res.failure(self.syntax_error(
+                    identifier_token, 
+                    'valid statement keyword or assignment operator (R, IS NOW A)',
+                    identifier_token['value'],
+                    category='Statement',
+                    context_kind='statement'
+                ))
+            else:
+                # backtrack to let it parse as expression
+                self.token_index -= 1
+                self.current_token = self.tokens[self.token_index]
+                return res.success(VarAccessNode(identifier_token))
+    elif self.current_token['type'] in (
+        # Arithmetic operations
+        TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, 
+        TokenType.DIFF_OF, TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF,
+        # Boolean operations
+        TokenType.BOTH_OF, TokenType.EITHER_OF, TokenType.WON_OF, TokenType.NOT,
+        TokenType.ALL_OF, TokenType.ANY_OF,
+        # Comparison operations
+        TokenType.BOTH_SAEM, TokenType.DIFFRINT,
+        # String operations
+        TokenType.SMOOSH,
+        # Typecasting
+        TokenType.MAEK
+    ):
+        res.node = res.register(self.expression())
+        if res.error or res.node: return res
 
     # Can't parse
     return res.failure(InvalidSyntaxError(self.current_token, 'Unexpected Syntax', expected='statement', found=self.current_token['value'], category='Statement', context_kind='statement', start_token=self.current_token))
@@ -1051,7 +1094,6 @@ class Parser:
     # But for simplicity, we'll check if we're at O RLY
 
     if self.current_token['type'] == TokenType.O_RLY:
-      # Optional: handle comma before O RLY (if it was parsed as separate token)
       self.advance() # Eat O RLY?
 
       # Parse if_true: YA RLY <linebreak> <statement_list> <linebreak>
@@ -1063,8 +1105,11 @@ class Parser:
       # Parse statements for if_true block
       if_block_statements = []
       while self.current_token['type'] not in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
         if res.error: return res
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in if-block", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='if_block', start_token=self.current_token))
         if statement:
           if_block_statements.append(statement)
 
@@ -1083,8 +1128,11 @@ class Parser:
         # Parse statements for this MEBBE block
         mebbe_statements = []
         while self.current_token['type'] not in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
+          prev_token_index = self.token_index
           statement = res.register(self.statement())
           if res.error: return res
+          if self.token_index == prev_token_index:
+            return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in MEBBE-block", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='mebbe_block', start_token=self.current_token))
           if statement:
             mebbe_statements.append(statement)
 
@@ -1095,8 +1143,11 @@ class Parser:
         self.advance() # Eat NO WAI
 
         while self.current_token['type'] not in (TokenType.OIC, TokenType.KTHXBYE):
+          prev_token_index = self.token_index
           statement = res.register(self.statement())
           if res.error: return res
+          if self.token_index == prev_token_index:
+            return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in NO WAI block", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='else_block', start_token=self.current_token))
           if statement:
             else_block_statements.append(statement)
 
@@ -1147,11 +1198,15 @@ class Parser:
           return res
 
         while self.current_token['type'] not in (TokenType.OMG, TokenType.OMGWTF, TokenType.OIC, TokenType.KTHXBYE):
+          prev_token_index = self.token_index
           statement = res.register(self.statement())
 
           # Has error
           if statement is None:
             return res
+          
+          if self.token_index == prev_token_index:
+            return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in OMG case", expected='statement or OMG/OMGWTF/OIC', found=self.current_token['value'], category='Statement', context_kind='switch_case', start_token=self.current_token))
 
           statements.append(statement)
         # Loop end
@@ -1168,11 +1223,15 @@ class Parser:
 
       # Add switch case
       while self.current_token['type'] not in (TokenType.OIC, TokenType.KTHXBYE):
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
 
         # Has error
         if statement is None:
           return res
+        
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in OMGWTF default case", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='switch_default', start_token=self.current_token))
 
         default_case_statements.append(statement)
 
@@ -1247,11 +1306,15 @@ class Parser:
 
       # Loop body
       while self.current_token['type'] not in (TokenType.IM_OUTTA_YR, TokenType.KTHXBYE):
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
 
         # Has error
         if statement is None:
           return res
+        
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in loop body", expected='statement or IM OUTTA YR', found=self.current_token['value'], category='Statement', context_kind='loop_body', start_token=self.current_token))
 
         body_statements.append(statement)
 
@@ -1326,8 +1389,12 @@ class Parser:
 
       # function body
       while self.current_token['type'] not in (TokenType.FOUND_YR, TokenType.IF_U_SAY_SO, TokenType.KTHXBYE):
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
         if statement is None: return res # Has error
+        
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in function body", expected='statement or IF U SAY SO', found=self.current_token['value'], category='Statement', context_kind='function_body', start_token=self.current_token))
 
         body_statements.append(statement)
 
