@@ -391,7 +391,7 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
             update_token_view(token_table, tokens)
             
             # Parsing
-            parser = Parser(tokens)
+            parser = Parser(tokens, filename=content_manager.file_path or '<untitled>')
             AST = parser.parse()
             
             if AST.error:
