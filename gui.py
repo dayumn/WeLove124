@@ -18,7 +18,6 @@ from src.parser.parser import Parser
 from src.interpreter.runtime import SymbolTable, Context
 from src.interpreter.interpreter import Interpreter
 
-
 # ============================================================================
 # CONSTANTS
 # ============================================================================
@@ -835,14 +834,13 @@ def reset_zoom(text_input, default_size, font_family):
     text_input.setFont(font)
 
 
-def create_new_tab(tab_widget, parent_window, font_family, 
-                  file_name=None, content=None):
+def create_new_tab(tab_widget, parent_window, font_family, file_name=None, content=None):
     """Create a new tab in the tab widget"""
-    # Create managers
+    # create managers
     file_manager = FileManager()
     content_manager = TextContentManager()
     
-    # Create editor widget
+    # create editor widget
     text_editor = QWidget()
     text_editor.setStyleSheet(
         f"background-color: {COLORS['EDITOR_BG']}; border: none; padding: 20px;"
@@ -866,31 +864,34 @@ def create_new_tab(tab_widget, parent_window, font_family,
     text_editor.setProperty("content_manager", content_manager)
     text_editor.setProperty("text_input", text_input)
     
-    # Add tab
+    # add tab
     tab_name = os.path.basename(file_name) if file_name else "Untitled"
     idx = tab_widget.addTab(text_editor, tab_name)
     
-    # Create close button
-    close_btn = QPushButton()
-    close_btn.setIcon(QIcon(str(BASE_DIR / 'src/assets/x.png')))
-    close_btn.setIconSize(QSize(16, 16))
-    close_btn.setFixedSize(16, 16)
-    close_btn.setFlat(True)
-    close_btn.setStyleSheet("""
-        QPushButton {
-            background-color: transparent;
-            border: none;
-            padding: 0px;
-        }
-        QPushButton:hover {
-            background-color: rgba(200, 200, 200, 0.2);
-            border-radius: 2px;
-        }
-    """)
-    close_btn.clicked.connect(lambda: tab_widget.removeTab(idx))
-    tab_widget.tabBar().setTabButton(
-        idx, tab_widget.tabBar().RightSide, close_btn
-    )
+    # create close button
+
+    # check if not mac to add close button
+    if IS_MACOS != -1:
+        close_btn = QPushButton()
+        close_btn.setIcon(QIcon(str(BASE_DIR / 'src/assets/x.png')))
+        close_btn.setIconSize(QSize(16, 16))
+        close_btn.setFixedSize(16, 16)
+        close_btn.setFlat(True)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+            }
+            QPushButton:hover {
+                background-color: rgba(200, 200, 200, 0.2);
+                border-radius: 2px;
+            }
+        """)
+        close_btn.clicked.connect(lambda: tab_widget.removeTab(idx))
+        tab_widget.tabBar().setTabButton(
+            idx, tab_widget.tabBar().RightSide, close_btn
+        )
     
     tab_widget.setCurrentWidget(text_editor)
     
@@ -1055,14 +1056,21 @@ def create_main_layout(window, font_family, monospace_font):
     toolbar_layout.addWidget(file_search_btn, 0)
     toolbar_layout.addStretch(1)
     toolbar_layout.addWidget(exec_btn, 0)
-    toolbar_layout.setContentsMargins(10, 10, 10, 10)
+    toolbar_layout.setContentsMargins(10, 10, 10, 0)
     
     # ========== TAB WIDGET ==========
     tab_widget = QTabWidget()
     tab_widget.setTabsClosable(True)
+    tab_widget.setDocumentMode(True)
     tab_widget.setMovable(True)
+    tab_widget.setExpanding(False)
+    tab_widget.tabBar().setElideMode(Qt.ElideMode.ElideRight) # shorten name
     tab_widget.setFont(QFont(font_family, 9))
     tab_widget.setStyleSheet(f"""
+        QTabBar {{
+            alignment: left;
+        }}
+                             
         QTabWidget::pane {{
             border: none;
             background-color: {COLORS['EDITOR_BG']};
@@ -1162,7 +1170,7 @@ def create_main_layout(window, font_family, monospace_font):
     setup_global_shortcuts(window, tab_widget, lexeme_manager, 
                           token_table, symbol_table, console, monospace_font)
     
-    # Create initial tab
+    # create initial tab
     create_new_tab(tab_widget, window, monospace_font)
 
 
