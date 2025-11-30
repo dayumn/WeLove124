@@ -160,35 +160,33 @@ class Value:
 
   
   # Comparison
-  def is_equal(self, other):
-    # If both are same type, compare directly
-    if self.__class__ == other.__class__:
+  def is_equal(self, other, operation_token=None):
+    # Only numeric comparisons are allowed
+    if self.__class__ == Number and other.__class__ == Number:
+      # Both are numeric types, compare values directly
       result = self.value == other.value
       return Boolean(result).set_context(self.context), None
     
-    # Try to typecast the second operand to the data type of the first operand
-    other_converted, error = other.typecast(self.__class__)
-    if error:
-      # If typecast fails, they're not equal
-      return Boolean(False).set_context(self.context), None
+    # Non-numeric types cannot be compared
+    # Use operation token's line number if available, otherwise fall back to self.line_number
+    return None, RuntimeError(
+      ('Comparison Error', None, operation_token['line'] if operation_token else self.line_number, operation_token),
+      f"Cannot compare non-numeric types. Only NUMBR and NUMBAR can be compared.\nConvert {self.__class__.__name__} and {other.__class__.__name__} to numbers first using explicit typecasting."
+    )
 
-    result = self.value == other_converted.value
-    return Boolean(result).set_context(self.context), None
-
-  def is_not_equal(self, other):
-    # If both are same type, compare directly
-    if self.__class__ == other.__class__:
+  def is_not_equal(self, other, operation_token=None):
+    # Only numeric comparisons are allowed
+    if self.__class__ == Number and other.__class__ == Number:
+      # Both are numeric types, compare values directly
       result = self.value != other.value
       return Boolean(result).set_context(self.context), None
     
-    # Try to typecast the second operand to the data type of the first operand
-    other_converted, error = other.typecast(self.__class__)
-    if error:
-      # If typecast fails, they're not equal
-      return Boolean(True).set_context(self.context), None
-
-    result = self.value != other_converted.value
-    return Boolean(result).set_context(self.context), None
+    # Non-numeric types cannot be compared
+    # Use operation token's line number if available, otherwise fall back to self.line_number
+    return None, RuntimeError(
+      ('Comparison Error', None, operation_token['line'] if operation_token else self.line_number, operation_token),
+      f"Cannot compare non-numeric types. Only NUMBR and NUMBAR can be compared.\nConvert {self.__class__.__name__} and {other.__class__.__name__} to numbers first using explicit typecasting."
+    )
 
   def __repr__(self):
     return str(self.value)  
@@ -237,14 +235,14 @@ class Noob(Value):
     super().__init__(line_number)
 
   def typecast(self, target_class):
-    # No need to typecast for Noob-to-Noob
+    # NOOBs can be implicitly typecast into TROOF
     if target_class == self.__class__:
       return self , None
 
     elif target_class == Boolean:
-      return Boolean(self.value).set_context(self.context) , None
+      return Boolean(False).set_context(self.context) , None
     
-    # Error
+    # Implicit typecasting to any other type except TROOF will result in an error
     return None, RuntimeError(
         ('Typecast Error', None, self.line_number), 
         f"Cannot implicitly convert {self.__class__.__name__} ({self.value}) to {target_class.__name__}.\nUse explicit typecasting with MAEK or IS NOW A."
@@ -257,13 +255,16 @@ class Noob(Value):
       return self , None
 
     elif target_class == Boolean:
-      return Boolean(self.value).set_context(self.context) , None
+      return Boolean(False).set_context(self.context) , None
     
     elif target_class == String:
       return String("").set_context(self.context) , None
 
     elif target_class == Number:
-      return Number(0).set_context(self.context) , None
+      if to_float:
+        return Number(0.0).set_context(self.context) , None
+      else:
+        return Number(0).set_context(self.context) , None
 
     # Error
     return None, RuntimeError(
@@ -286,18 +287,24 @@ class String(Value):
     if target_class == self.__class__:
       return self , None
 
+    # The empty string ("") is cast to FAIL, all other values are cast to WIN
     elif target_class == Boolean:
-      return Boolean(self.value).set_context(self.context) , None
+      return Boolean(self.value != "").set_context(self.context) , None
     
+    # A YARN can be successfully cast into a NUMBAR or NUMBR if the YARN does not contain 
+    # any non-numerical, non-hyphen, non-period characters
     elif target_class == Number:
-      if Number.is_integer(self.value):
+      # Check if string contains only valid numeric characters: digits, hyphen (at start), and period
+      if re.match(r'^-?\d+$', self.value):  # Integer format
         return Number(int(self.value)).set_context(self.context) , None
-      elif Number.is_float(self.value):
-        # Truncate up to 2 decimal places
+      elif re.match(r'^-?\d*\.\d+$', self.value):  # Float format
         return Number(float(self.value)).set_context(self.context) , None
-      # else:
-      #   # 0 if empty, 1 if not (delete this, was not mentioned in project specs)
-      #   return Number(int(bool(self.value))).set_context(self.context) , None
+      else:
+        # String contains non-numeric characters
+        return None, RuntimeError(
+            ('Typecast Error', None, self.line_number), 
+            f"Cannot convert String '{self.value}' to {target_class.__name__}.\nThe string contains non-numerical characters."
+          )
 
     # Error
     return None, RuntimeError(
@@ -360,14 +367,17 @@ class Number(Value):
     if target_class == self.__class__:
       return self , None
 
+    # Numerical zero values are cast to FAIL, all other values are cast to WIN
     elif target_class == Boolean:
-      return Boolean(self.value != 0).set_context(self.context) , None
+      return Boolean(self.value != 0 and self.value != 0.0).set_context(self.context) , None
     
     elif target_class == String:
       if Number.is_integer(self.value):
-        return String(str(self.value)).set_context(self.context) , None
+        # Casting NUMBRs to YARN will just convert the value into a string of characters
+        return String(str(int(self.value))).set_context(self.context) , None
       elif Number.is_float(self.value):
-        return String(str(int(self.value * 100) / 100)).set_context(self.context) , None  # if Float, Truncate up to two decimal places
+        # Casting NUMBARs to YARN will truncate the decimal portion up to two decimal places
+        return String(f"{self.value:.2f}").set_context(self.context) , None
     
     # Error
     return None, RuntimeError(
@@ -377,27 +387,34 @@ class Number(Value):
   
   def explicit_typecast(self, target_class, to_float=False):
     # Casting NUMBARs to NUMBR will truncate the decimal portion of the NUMBAR.
-    # Casting NUMBRs to NUMBAR will just convert the value into a floating point.The value should be retained.
+    # Casting NUMBRs to NUMBAR will just convert the value into a floating point. The value should be retained.
     if target_class == self.__class__:
       if Number.is_integer(self.value) and to_float == False:
         return self , None # No need to change anything if Int already
       
-      # Integer -> Float
+      # Casting NUMBRs to NUMBAR (Integer -> Float)
       elif Number.is_integer(self.value) and to_float == True:
         return Number(float(self.value)).set_context(self.context) , None
       
-      # Float -> Integer
-      elif Number.is_float(self.value) and to_float == True:
+      # Casting NUMBARs to NUMBR (Float -> Integer) - truncate decimal portion
+      elif Number.is_float(self.value) and to_float == False:
         return Number(int(self.value)).set_context(self.context) , None
+      
+      # Float to Float - no change
+      elif Number.is_float(self.value) and to_float == True:
+        return self , None
 
+    # Numerical zero values are cast to FAIL, all other values are cast to WIN
     elif target_class == Boolean:
-      return Boolean(self.value != 0).set_context(self.context) , None
+      return Boolean(self.value != 0 and self.value != 0.0).set_context(self.context) , None
     
     elif target_class == String:
       if Number.is_integer(self.value):
-        return String(str(self.value)).set_context(self.context) , None
+        # Casting NUMBRs to YARN will just convert the value into a string of characters
+        return String(str(int(self.value))).set_context(self.context) , None
       elif Number.is_float(self.value):
-        return String(str(int(self.value * 100) / 100)).set_context(self.context) , None  # if Float, Truncate up to two decimal places
+        # Casting NUMBARs to YARN will truncate the decimal portion up to two decimal places
+        return String(f"{self.value:.2f}").set_context(self.context) , None
     
     # Error
     return None, RuntimeError(
@@ -436,11 +453,12 @@ class Boolean(Value):
     if target_class == self.__class__:
       return self , None
 
+    # Casting WIN to a numerical type results in 1, Casting FAIL results in a numerical zero
     elif target_class == Number:
       return Number(1 if self.value else 0).set_context(self.context) , None
 
     elif target_class == String:
-      return String(self.get_value_representation()), None
+      return String(self.get_value_representation()).set_context(self.context), None
 
     # Error
     return None, RuntimeError(
@@ -448,20 +466,20 @@ class Boolean(Value):
         f"Cannot implicitly convert Boolean ({self.get_value_representation()}) to {target_class.__name__}.\nThis type conversion is not supported."
       )
 
-  # Casting WIN to a numerical type results in 1 or 1.0.
+  # Casting WIN to a numerical type results in 1 or 1.0. Casting FAIL results in a numerical zero.
   def explicit_typecast(self, target_class, to_float=False):
     # No need to typecast for Boolean-to-Boolean
     if target_class == self.__class__:
       return self , None
 
     elif target_class == Number:
-      if to_float == False:
-        return Number(1 if self.value else 0).set_context(self.context) , None
+      if to_float:
+        return Number(1.0 if self.value else 0.0).set_context(self.context) , None
       else:
-        return Number(1.0 if self.value else 0).set_context(self.context) , None
+        return Number(1 if self.value else 0).set_context(self.context) , None
 
     elif target_class == String:
-      return String(self.get_value_representation()), None
+      return String(self.get_value_representation()).set_context(self.context), None
 
     # Error
     return None, RuntimeError(

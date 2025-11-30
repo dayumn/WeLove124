@@ -1,6 +1,19 @@
 import re
 from enum import Enum
 
+# Lexer Error class for consistent error formatting
+class LexerError(Exception):
+    def __init__(self, message, line, col, filename='<stdin>'):
+        self.message = message
+        self.line = line
+        self.col = col
+        self.filename = filename
+        super().__init__(message)
+    
+    def as_string(self):
+        # Match the format: Line X:Y\nLexerError: message
+        return f"Line {self.line}:{self.col}\nLexerError: {self.message}\n"
+
 # Token types
 class TokenType(Enum):
     # Keywords
@@ -82,9 +95,10 @@ class TokenType(Enum):
 # Token specification with patterns
 TOKEN_SPEC = [
     # Comments (must come before other patterns)
-    # Skip single-line and multi-line comments entirely for Milestone 1
+    # Skip single-line comments
     (None, r'\bBTW\b[^\n]*'),
-    (None, r'\bOBTW\b.*?\bTLDR\b', re.DOTALL),
+    # Multiline comments - will be validated for proper placement
+    (TokenType.COMMENT, r'\bOBTW\b.*?\bTLDR\b', re.DOTALL),
     
     # Multi-word keywords (order matters - longest first)
     (TokenType.IM_OUTTA_YR, r'IM\s+OUTTA\s+YR'),
@@ -293,7 +307,7 @@ CATEGORY_MAP = { # TokenType: Category Name
 
 }
 
-def tokenize(code):
+def tokenize(code, filename='<stdin>'):
     """
     Tokenize LOLCODE source code.
     Returns a list of tokens.
@@ -384,7 +398,35 @@ def tokenize(code):
                     if token_type is not None:
                         # Check for malformed comment keywords that got matched as identifiers
                         if token_type == TokenType.IDENTIFIER and value.startswith(('BTW', 'OBTW', 'TLDR')):
-                            raise SyntaxError(f"Invalid comment keyword '{value}' at line {line}, col {col}.")
+                            raise LexerError(f"Invalid comment keyword '{value}'", line, col, filename)
+                        
+                        # Validate multiline comment placement
+                        if token_type == TokenType.COMMENT:
+                            # Check if the previous non-whitespace token is a newline or if we're at start
+                            # This ensures OBTW...TLDR only appears between statements
+                            if tokens:
+                                # Look back to find the last non-newline token
+                                last_significant_token = None
+                                for t in reversed(tokens):
+                                    if t['type'] != TokenType.NEWLINE:
+                                        last_significant_token = t
+                                        break
+                                
+                                # If there's a significant token on the same line, it's inline - not allowed
+                                if last_significant_token and last_significant_token['line'] == line:
+                                    raise LexerError(f"Multiline comments (OBTW...TLDR) cannot appear inline within statements.\nThey must be placed on their own lines between statements.", line, col, filename)
+                            
+                            # Skip adding the comment token - we don't need it in the token stream
+                            # Update position tracking and continue without adding token
+                            newline_count = value.count('\n')
+                            if newline_count == 0:
+                                col += len(value)
+                            else:
+                                line += newline_count
+                                col = len(value) - value.rfind('\n')
+                            pos = match.end()
+                            match_found = True
+                            break
                         
                         # Track when we enter/exit string mode
                         if token_type == TokenType.QUOTE:
@@ -412,7 +454,7 @@ def tokenize(code):
         if not match_found:
             # Handle unexpected character
             char = code[pos]
-            raise SyntaxError(f"Unexpected character '{char}' at line {line}, col {col}")
+            raise LexerError(f"Unexpected character '{char}'", line, col, filename)
     
     # Post-process: Handle ellipsis line continuation
     # Ellipsis (...  or …) at end of line allows continuation to next line

@@ -7,6 +7,9 @@ from .values import *
 # INTERPRETER
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 class Interpreter:
+  def __init__(self, filename='<stdin>'):
+    self.filename = filename
+  
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit(self, node, context):
     method_name = f'visit_{type(node).__name__}'
@@ -151,10 +154,10 @@ class Interpreter:
     if res.error: return res
 
     if node.operation['type'] == TokenType.BOTH_SAEM:
-      result, error = left.is_equal(right)
+      result, error = left.is_equal(right, node.operation)
 
     elif node.operation['type'] == TokenType.DIFFRINT:
-      result, error = left.is_not_equal(right)
+      result, error = left.is_not_equal(right, node.operation)
 
     if (error): return res.failure(error)
     else: return res.success(result)
@@ -185,7 +188,7 @@ class Interpreter:
     var_name = node.var_name_token['value']
 
     if not context.symbol_table.found(var_name):
-      return res.failure(RuntimeError(node.var_name_token, f"Variable '{var_name}' is not defined.\nMake sure you declared it with 'I HAS A {var_name}' before using it."))
+      return res.failure(RuntimeError(node.var_name_token, f"Variable '{var_name}' is not defined.\nMake sure you declared it with 'I HAS A {var_name}' before using it.", self.filename))
     
     value = context.symbol_table.get(var_name)
     return res.success(value)
@@ -215,7 +218,7 @@ class Interpreter:
     value_to_assign = res.register(self.visit(node.value_to_assign, context))
 
     if not context.symbol_table.found(var_to_access['value']):
-      return res.failure(RuntimeError(var_to_access, f"Cannot assign to undefined variable '{var_to_access['value']}'.\nDeclare it first with 'I HAS A {var_to_access['value']}'."))
+      return res.failure(RuntimeError(var_to_access, f"Cannot assign to undefined variable '{var_to_access['value']}'.\nDeclare it first with 'I HAS A {var_to_access['value']}'.", self.filename))
 
     context.symbol_table.set(var_to_access['value'], value_to_assign)
     return res.success(value_to_assign)
@@ -409,7 +412,7 @@ class Interpreter:
       # Incrementor/Decrementor - directly update the value in the symbol table
       iterator = context.symbol_table.get(var_name)
       if iterator is None:
-        return res.failure(RuntimeError(variable, f"Cannot store input in undefined variable '{var_name}'.\nDeclare it first with 'I HAS A {var_name}'."))
+        return res.failure(RuntimeError(variable, f"Cannot store input in undefined variable '{var_name}'.\nDeclare it first with 'I HAS A {var_name}'.", self.filename))
       
       # Typecast to Number if needed
       iterator, error = iterator.typecast(Number)
@@ -480,62 +483,21 @@ class Interpreter:
       # Get user input directly using input() function
       user_input_value = str(input())
 
-      # Try to infer the type from the input
-      # First try integer
-      try:
-        int_value = int(user_input_value)
-        user_input_token = {
-          'type': TokenType.INTEGER,
-          'value': int_value,
-          'line': variable.var_name_token['line'],
-          'col': 0
-        }
-        user_input = IntegerNode(user_input_token)
-      except ValueError:
-        # Try float
-        try:
-          float_value = float(user_input_value)
-          user_input_token = {
-            'type': TokenType.FLOAT,
-            'value': float_value,
-            'line': variable.var_name_token['line'],
-            'col': 0
-          }
-          user_input = FloatNode(user_input_token)
-        except ValueError:
-          # Check for boolean literals
-          if user_input_value == "WIN":
-            user_input_token = {
-              'type': TokenType.WIN,
-              'value': "WIN",
-              'line': variable.var_name_token['line'],
-              'col': 0
-            }
-            user_input = BooleanNode(user_input_token)
-          elif user_input_value == "FAIL":
-            user_input_token = {
-              'type': TokenType.FAIL,
-              'value': "FAIL",
-              'line': variable.var_name_token['line'],
-              'col': 0
-            }
-            user_input = BooleanNode(user_input_token)
-          else:
-            # Default to string
-            user_input_token = {
-              'type': TokenType.STRING,
-              'value': user_input_value,
-              'line': variable.var_name_token['line'],
-              'col': 0
-            }
-            user_input = StringNode(user_input_token)
+      # GIMMEH should return YARN by default (as per specifications)
+      user_input_token = {
+        'type': TokenType.STRING,
+        'value': user_input_value,
+        'line': variable.var_name_token['line'],
+        'col': 0
+      }
+      user_input = StringNode(user_input_token)
 
       # Assign the user input to the variable in the symbol table
       value = res.register(self.visit(VarAssignmentNode(variable.var_name_token, user_input), context))
     else:
       # If the variable is not defined, return an error
       return res.failure(RuntimeError(
-        ('Var Access Error', None, variable.var_name_token['line']), f"Can't find a variable named '{variable.var_name_token['value']}'"
+        ('Var Access Error', None, variable.var_name_token['line']), f"Can't find a variable named '{variable.var_name_token['value']}'", self.filename
       ))
 
     return res.success(value)

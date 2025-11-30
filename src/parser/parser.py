@@ -293,11 +293,8 @@ class InvalidSyntaxError(Error):
     line = self.start_token['line'] if isinstance(self.start_token, dict) else 0
     col = self.start_token.get('col', 0) if isinstance(self.start_token, dict) else 0
     
-    # Get filename from parse_stack or use <stdin> as fallback
-    filename = self.parse_stack[0]['filename'] if self.parse_stack else '<stdin>'
-    
-    # Format: File "line X:col Y", SyntaxError: message
-    msg = f'  File "{filename}", line {line}:{col}\n'
+    # Format: Line X:Y, SyntaxError: message (consistent with lexer/runtime errors)
+    msg = f'Line {line}:{col}\n'
     msg += f'SyntaxError: '
     
     # Build error message
@@ -329,22 +326,38 @@ class InvalidSyntaxError(Error):
     return msg + "\n"
 
 class RuntimeError(Error):
-  def __init__(self, token, details):
+  def __init__(self, token, details, filename='<stdin>'):
     super().__init__(token, details, error_name='Runtime Error')
+    self.filename = filename
   
   def as_string(self):
     # Handle different token formats
     if isinstance(self.token, dict):
       line = self.token.get('line', 'unknown')
+      col = self.token.get('col', 0)
       value = self.token.get('value', '<unknown>')
-      return f"\n{'='*50}\nRUNTIME ERROR at line {line}\n{'='*50}\n{self.details}\nLocation: '{value}'\n{'='*50}\n"
+      # Simplified format: just line number
+      msg = f'Line {line}:{col}\n'
+      msg += f'RuntimeError: {self.details}\n'
+      if value and value != '<unknown>':
+        msg += f'  at: {repr(value)}\n'
+      return msg
     elif isinstance(self.token, tuple):
-      # Handle tuple format: (category, subcategory, line_number)
+      # Handle tuple format: (category, subcategory, line_number, token)
       category = self.token[0] if len(self.token) > 0 else 'Unknown'
       line = self.token[2] if len(self.token) > 2 else 'unknown'
-      return f"\n{'='*50}\nRUNTIME ERROR at line {line}\n{'='*50}\n{self.details}\nCategory: {category}\n{'='*50}\n"
+      token = self.token[3] if len(self.token) > 3 else None
+      col = token.get('col', 0) if isinstance(token, dict) else 0
+      # Simplified format: just line number
+      msg = f'Line {line}:{col}\n'
+      msg += f'RuntimeError: {self.details}\n'
+      if category and category != 'Unknown':
+        msg += f'  Category: {category}\n'
+      return msg
     else:
-      return f"\n{'='*50}\nRUNTIME ERROR\n{'='*50}\n{self.details}\n{'='*50}\n"
+      # Fallback format
+      msg = f'RuntimeError: {self.details}\n'
+      return msg
 
     
 #------------------------------------------------------------------------------------------------

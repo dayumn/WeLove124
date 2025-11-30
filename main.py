@@ -41,23 +41,34 @@ def main():
             continue
 
         print(f"\n=== TEST for: {path} ===")
+        
+        # Stage 1: Lexer
         try:
-            tokens = tokenizer.tokenize(source)
+            tokens = tokenizer.tokenize(source, filename=path)
             print(f"Total tokens: {len(tokens)}\n")
             print_tokens(tokens)
-
-            parser = Parser(tokens, filename=path)
-            AST = parser.parse()
-            print("\nPARSE TREE")
-
-            if AST.error:
-                print(AST.error.as_string())
-            else:
-                print(AST.node)
-
-            #If no errors run interpreter
-            print("\nINTERPRETER OUTPUT:")
-            lolcode_interpreter = Interpreter()
+        except tokenizer.LexerError as e:
+            print(e.as_string())
+            continue  # Skip to next file if lexer fails
+        except Exception as e:
+            print(f"ERROR: {e}")
+            continue
+        
+        # Stage 2: Parser (only if lexer succeeded)
+        parser = Parser(tokens, filename=path)
+        AST = parser.parse()
+        print("\nPARSE TREE")
+        
+        if AST.error:
+            print(AST.error.as_string())
+            continue  # Skip to next file if parser fails
+        else:
+            print(AST.node)
+        
+        # Stage 3: Interpreter (only if parser succeeded)
+        print("\nINTERPRETER OUTPUT:")
+        try:
+            lolcode_interpreter = Interpreter(filename=path)
             context = Context('<program>')
             context.symbol_table = SymbolTable()
             result = lolcode_interpreter.visit(AST.node, context)
@@ -80,7 +91,6 @@ def main():
                 print(result.error.as_string())
             # else:
             #     print(f"\nProgram executed successfully")
-            
-        except SyntaxError as e:
-            print(f"ERROR {e}")
+        except Exception as e:
+            print(f"ERROR: {e}")
 main()
