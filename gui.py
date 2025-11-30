@@ -348,38 +348,51 @@ def highlight_words(text_input):
     current_text = text_input.toPlainText()
     lines = current_text.split('\n')
     char_count = 0
-    
-    for line in lines:
-        if line.find(MULTI_COMMENT) != -1:
-            # for multi-line comments, highlight entire line
-            start_pos = char_count + line.find(MULTI_COMMENT)
-            end_pos = char_count + len(line)
-            
-            cursor = text_input.textCursor()
-            cursor.setPosition(start_pos)
-            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
-            
-            format = QTextCharFormat()
-            format.setForeground(QColor(COMMENT_COLOR))
-            cursor.setCharFormat(format)
+    inside_multi = False
+    multi_start = 0
 
-       
-        comment_index = line.find(COMMENT_START) # find index of comment start BTW
-        if comment_index != -1: # iff it exist
-            # found comment, highlight from comment start to end of line
-            start_pos = char_count + comment_index # find where BTW starts
-            end_pos = char_count + len(line) # find \n
-            
-            # update cursor position
+    for line in lines:
+        # -------- MULTILINE COMMENTS --------
+        if not inside_multi:
+            start_idx = line.find(MULTI_COMMENT)  # e.g. "OBTW"
+            if start_idx != -1:
+                inside_multi = True
+                multi_start = char_count + start_idx
+
+        if inside_multi:
+            end_idx = line.find("TLDR")
+            if end_idx != -1:
+                # highlight from multi_start to end of TLDR
+                multi_end = char_count + end_idx + 4
+
+                cursor = text_input.textCursor()
+                cursor.setPosition(multi_start)
+                cursor.setPosition(multi_end, QTextCursor.KeepAnchor)
+
+                fmt = QTextCharFormat()
+                fmt.setForeground(QColor(COMMENT_COLOR))
+                cursor.setCharFormat(fmt)
+
+                inside_multi = False
+            char_count += len(line) + 1
+            continue  # skip single-line check while inside multi
+        
+        # -------- SINGLE LINE COMMENTS --------
+        comment_idx = line.find(COMMENT_START)  # e.g. "BTW"
+        if comment_idx != -1:
+            start_pos = char_count + comment_idx
+            end_pos = char_count + len(line)
+
             cursor = text_input.textCursor()
             cursor.setPosition(start_pos)
             cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
-            
-            format = QTextCharFormat()
-            format.setForeground(QColor(COMMENT_COLOR))
-            cursor.setCharFormat(format)
-        
-        char_count += len(line) + 1  # +1 for the \n
+
+            fmt = QTextCharFormat()
+            fmt.setForeground(QColor(COMMENT_COLOR))
+            cursor.setCharFormat(fmt)
+
+        # continue pos counter
+        char_count += len(line) + 1
 
     # highlight each keyword (but comments will stay green)
     text_input.moveCursor(QTextCursor.Start)
@@ -456,7 +469,6 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
         console_widget.write("Error: Please save the file first (Ctrl+S)", "#FF6B6B") # error handling
         return
     
-   
     # clear console 
     console_widget.clear()
 

@@ -1,0 +1,11 @@
+HAI
+	WAZZUP
+		I HAS A x ITZ 5
+	BUHBYE
+
+	O RLY
+		YA RLY
+			VISIBLE "test"
+	OIC
+
+KTHXBYE

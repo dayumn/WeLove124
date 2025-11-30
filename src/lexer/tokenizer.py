@@ -83,11 +83,8 @@ class TokenType(Enum):
 TOKEN_SPEC = [
     # Comments (must come before other patterns)
     # Skip single-line and multi-line comments entirely for Milestone 1
-    (None, r'BTW[^\n]*'),
-    (None, r'OBTW.*?TLDR', re.DOTALL),
-    
-    # Skip multiline comments (neglect them entirely)
-    (None, r'OBTW.*?TLDR', re.DOTALL),
+    (None, r'\bBTW\b[^\n]*'),
+    (None, r'\bOBTW\b.*?\bTLDR\b', re.DOTALL),
     
     # Multi-word keywords (order matters - longest first)
     (TokenType.IM_OUTTA_YR, r'IM\s+OUTTA\s+YR'),
@@ -317,6 +314,9 @@ def tokenize(code):
             string_col = col
             while pos < len(code) and code[pos] != '"' and code[pos] != '\n':
                 pos += 1
+
+            if pos < len(code) and code[pos] == '\n':
+                raise SyntaxError(f"Unclosed string literal at line {line}, col {string_col}")
             
             if pos > string_start:
                 value = code[string_start:pos]
@@ -337,6 +337,10 @@ def tokenize(code):
                     
                     # Skip whitespace (token_type is None)
                     if token_type is not None:
+                        # Check for malformed comment keywords that got matched as identifiers
+                        if token_type == TokenType.IDENTIFIER and value.startswith(('BTW', 'OBTW', 'TLDR')):
+                            raise SyntaxError(f"Invalid comment keyword '{value}' at line {line}, col {col}.")
+                        
                         # Track when we enter/exit string mode
                         if token_type == TokenType.QUOTE:
                             in_string = not in_string
