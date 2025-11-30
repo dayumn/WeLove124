@@ -369,11 +369,20 @@ class Parser:
   def parse(self):
     res = ParseResult()
     sections = []
+    
+    # Skip any leading newlines at the start of the file
+    while self.current_token and self.current_token['type'] == TokenType.NEWLINE:
+      self.advance()
+    
     start = self.current_token if self.current_token else {'value':'<START>','line':1,'type':'<START>','category':'Start'}
     if (self.current_token['type'] != TokenType.HAI):
       return res.failure(InvalidSyntaxError(start, "Missing program start", expected='HAI', found=(self.current_token['value'] if self.current_token else 'end of input'), category='Program Delimiter', context_kind='program', start_token=start))
 
     self.advance() # Eat HAI
+
+    # Skip newlines after HAI
+    while self.current_token['type'] == TokenType.NEWLINE:
+      self.advance()
 
     # Check if there's a variable section
     if self.current_token['type'] == TokenType.WAZZUP:
@@ -398,6 +407,12 @@ class Parser:
     variable_declarations = []
 
     while (self.current_token['type'] != TokenType.BUHBYE and self.token_index < len(self.tokens) - 1):
+      # Skip leading newlines
+      while self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()
+      if self.current_token['type'] == TokenType.BUHBYE or self.token_index >= len(self.tokens) - 1:
+        break
+      
       variable_declaration = res.register(self.variable_declaration())
 
       # Has error
@@ -405,6 +420,10 @@ class Parser:
         return res
 
       variable_declarations.append(variable_declaration)
+      
+      # Skip newlines after variable declaration
+      while self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()
 
     # Error
     if (self.current_token['type'] != TokenType.BUHBYE):
@@ -412,6 +431,10 @@ class Parser:
 
     # No error
     self.advance() # Eat BUHBYE
+    
+    # Skip newlines after BUHBYE
+    while self.current_token['type'] == TokenType.NEWLINE:
+      self.advance()
 
     return res.success(VarDecListNode(variable_declarations))
 
@@ -460,6 +483,14 @@ class Parser:
     statements = []
 
     while (self.current_token['type'] != TokenType.KTHXBYE and self.token_index < len(self.tokens) - 1):
+      # Skip leading newlines
+      while self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()
+      
+      # Check again after skipping newlines
+      if self.current_token['type'] == TokenType.KTHXBYE or self.token_index >= len(self.tokens) - 1:
+        break
+      
       prev_token_index = self.token_index  # Track position before parsing
       statement = res.register(self.statement())
 
@@ -473,9 +504,12 @@ class Parser:
 
       statements.append(statement)
       
-      # Check for comma as soft-command-break (acts as virtual newline)
+      # Check for statement separators (newline or comma)
       if self.current_token['type'] == TokenType.COMMA:
         self.advance()  # Eat the comma and continue to next statement
+      elif self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()  # Eat the newline and continue to next statement
+      # If neither comma nor newline, continue (for cases like after OIC, etc.)
 
     if (self.current_token['type'] != TokenType.KTHXBYE):
       return res.failure(InvalidSyntaxError(self.current_token, "Unterminated program body", expected='KTHXBYE', found=self.current_token['value'], category='Code Delimiter', context_kind='program_body', start_token=self.current_token))
@@ -1073,6 +1107,10 @@ class Parser:
       # Optional: handle comma before O RLY (if it was parsed as separate token)
       self.advance() # Eat O RLY?
 
+      # Skip newlines after O RLY?
+      while self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()
+
       # Parse if_true: YA RLY <linebreak> <statement_list> <linebreak>
       if self.current_token['type'] != TokenType.YA_RLY:
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'YA RLY', self.current_token['value'], category='Conditional', context_kind='if'))
@@ -1082,12 +1120,20 @@ class Parser:
       # Parse statements for if_true block
       if_block_statements = []
       while self.current_token['type'] not in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
+        # Skip leading newlines
+        while self.current_token['type'] == TokenType.NEWLINE:
+          self.advance()
+        if self.current_token['type'] in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
+          break
+        
         statement = res.register(self.statement())
         if res.error: return res
         if statement:
           if_block_statements.append(statement)
-        # Check for comma as soft-command-break
+        # Check for statement separators
         if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
+        elif self.current_token['type'] == TokenType.NEWLINE:
           self.advance()
 
       # Parse if_false: MEBBE <expression> <linebreak> <statement_list> <linebreak> <if_false> | NO WAI <linebreak> <statement_list> <linebreak> | ε
@@ -1105,12 +1151,20 @@ class Parser:
         # Parse statements for this MEBBE block
         mebbe_statements = []
         while self.current_token['type'] not in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
+          # Skip leading newlines
+          while self.current_token['type'] == TokenType.NEWLINE:
+            self.advance()
+          if self.current_token['type'] in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
+            break
+          
           statement = res.register(self.statement())
           if res.error: return res
           if statement:
             mebbe_statements.append(statement)
-          # Check for comma as soft-command-break
+          # Check for statement separators
           if self.current_token['type'] == TokenType.COMMA:
+            self.advance()
+          elif self.current_token['type'] == TokenType.NEWLINE:
             self.advance()
 
         mebbe_cases.append((mebbe_condition, mebbe_statements))
@@ -1120,12 +1174,20 @@ class Parser:
         self.advance() # Eat NO WAI
 
         while self.current_token['type'] not in (TokenType.OIC, TokenType.KTHXBYE):
+          # Skip leading newlines
+          while self.current_token['type'] == TokenType.NEWLINE:
+            self.advance()
+          if self.current_token['type'] in (TokenType.OIC, TokenType.KTHXBYE):
+            break
+          
           statement = res.register(self.statement())
           if res.error: return res
           if statement:
             else_block_statements.append(statement)
-          # Check for comma as soft-command-break
+          # Check for statement separators
           if self.current_token['type'] == TokenType.COMMA:
+            self.advance()
+          elif self.current_token['type'] == TokenType.NEWLINE:
             self.advance()
 
       # Expect OIC
@@ -1175,6 +1237,12 @@ class Parser:
           return res
 
         while self.current_token['type'] not in (TokenType.OMG, TokenType.OMGWTF, TokenType.OIC, TokenType.KTHXBYE):
+          # Skip leading newlines
+          while self.current_token['type'] == TokenType.NEWLINE:
+            self.advance()
+          if self.current_token['type'] in (TokenType.OMG, TokenType.OMGWTF, TokenType.OIC, TokenType.KTHXBYE):
+            break
+          
           statement = res.register(self.statement())
 
           # Has error
@@ -1182,8 +1250,10 @@ class Parser:
             return res
 
           statements.append(statement)
-          # Check for comma as soft-command-break
+          # Check for statement separators
           if self.current_token['type'] == TokenType.COMMA:
+            self.advance()
+          elif self.current_token['type'] == TokenType.NEWLINE:
             self.advance()
         # Loop end
 
@@ -1199,6 +1269,12 @@ class Parser:
 
       # Add switch case
       while self.current_token['type'] not in (TokenType.OIC, TokenType.KTHXBYE):
+        # Skip leading newlines
+        while self.current_token['type'] == TokenType.NEWLINE:
+          self.advance()
+        if self.current_token['type'] in (TokenType.OIC, TokenType.KTHXBYE):
+          break
+        
         statement = res.register(self.statement())
 
         # Has error
@@ -1206,8 +1282,10 @@ class Parser:
           return res
 
         default_case_statements.append(statement)
-        # Check for comma as soft-command-break
+        # Check for statement separators
         if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
+        elif self.current_token['type'] == TokenType.NEWLINE:
           self.advance()
 
       if self.current_token['type'] != TokenType.OIC:
@@ -1281,6 +1359,12 @@ class Parser:
 
       # Loop body
       while self.current_token['type'] not in (TokenType.IM_OUTTA_YR, TokenType.KTHXBYE):
+        # Skip leading newlines
+        while self.current_token['type'] == TokenType.NEWLINE:
+          self.advance()
+        if self.current_token['type'] in (TokenType.IM_OUTTA_YR, TokenType.KTHXBYE):
+          break
+        
         statement = res.register(self.statement())
 
         # Has error
@@ -1288,8 +1372,10 @@ class Parser:
           return res
 
         body_statements.append(statement)
-        # Check for comma as soft-command-break
+        # Check for statement separators
         if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
+        elif self.current_token['type'] == TokenType.NEWLINE:
           self.advance()
 
       # Loop out
@@ -1363,12 +1449,20 @@ class Parser:
 
       # function body
       while self.current_token['type'] not in (TokenType.FOUND_YR, TokenType.IF_U_SAY_SO, TokenType.KTHXBYE):
+        # Skip leading newlines
+        while self.current_token['type'] == TokenType.NEWLINE:
+          self.advance()
+        if self.current_token['type'] in (TokenType.FOUND_YR, TokenType.IF_U_SAY_SO, TokenType.KTHXBYE):
+          break
+        
         statement = res.register(self.statement())
         if statement is None: return res # Has error
 
         body_statements.append(statement)
-        # Check for comma as soft-command-break
+        # Check for statement separators
         if self.current_token['type'] == TokenType.COMMA:
+          self.advance()
+        elif self.current_token['type'] == TokenType.NEWLINE:
           self.advance()
 
       if self.current_token['type'] == TokenType.FOUND_YR:
@@ -1379,6 +1473,10 @@ class Parser:
         if return_expression is None: return res # Has error
 
         body_statements.append(ReturnNode(return_expression))
+
+      # Skip newlines before IF U SAY SO
+      while self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()
 
       if self.current_token['type'] != TokenType.IF_U_SAY_SO:
         return res.failure(self.syntax_error(self.current_token, 'IF U SAY SO', self.current_token['value'], category='Function Terminator', context_kind='function_def'))

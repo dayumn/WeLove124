@@ -70,7 +70,7 @@ class TokenType(Enum):
     FLOAT = "FLOAT"
     
     # Special
-    # NEWLINE = "NEWLINE"
+    NEWLINE = "NEWLINE"
     COMMENT = "COMMENT"
     ELLIPSIS = "ELLIPSIS"
     COMMA = "COMMA"
@@ -163,11 +163,11 @@ TOKEN_SPEC = [
     (TokenType.IDENTIFIER, r'[a-zA-Z_][a-zA-Z0-9_]*'),
     
     # Special characters
-    (TokenType.ELLIPSIS, r'\.\.\.'),
+    (TokenType.ELLIPSIS, r'(\.\.\.|…)'),  # Three periods or unicode ellipsis (U+2026)
     (TokenType.COMMA, r','),
     (TokenType.EXCLAMATION, r'!'),
     (TokenType.PLUS, r'\+'),
-    (None, r'\n'),
+    (TokenType.NEWLINE, r'\n'),  # Tokenize newlines for statement separation
     
     # Skip whitespace
     (None, r'[ \t]+'),
@@ -324,6 +324,24 @@ def tokenize(code):
             char = code[pos]
             raise SyntaxError(f"Unexpected character '{char}' at line {line}, col {col}")
     
-    return tokens
+    # Post-process: Handle ellipsis line continuation
+    # Ellipsis (...  or …) at end of line allows continuation to next line
+    # Remove ellipsis token and the immediately following newline token
+    filtered_tokens = []
+    i = 0
+    while i < len(tokens):
+        token = tokens[i]
+        if token['type'] == TokenType.ELLIPSIS:
+            # Skip the ellipsis token
+            # Also skip the next token if it's a newline
+            if i + 1 < len(tokens) and tokens[i + 1]['type'] == TokenType.NEWLINE:
+                i += 2  # Skip both ellipsis and newline
+            else:
+                i += 1  # Just skip ellipsis
+        else:
+            filtered_tokens.append(token)
+            i += 1
+    
+    return filtered_tokens
 
 

@@ -2,7 +2,7 @@ from src.lexer import tokenizer
 from src.parser.parser import Parser
 from src.interpreter.runtime import SymbolTable, Context
 from src.interpreter.interpreter import Interpreter
-
+import sys
 
 
 def print_tokens(tokens):
@@ -13,19 +13,24 @@ def print_tokens(tokens):
 
 
 def main():
-    base = "test/project-testcases"
-    files = [
-        # f"{base}/01_variables.lol",
-        # f"{base}/02_gimmeh.lol",
-        # f"{base}/03_arith.lol",
-        f"{base}/04_smoosh_assign.lol",
-        # f"{base}/05_bool.lol",
-        # f"{base}/06_comparison.lol",
-        # f"{base}/07_ifelse.lol",
-        # f"{base}/08_switch.lol",
-        # f"{base}/09_loops.lol",
-        # f"{base}/10_functions.lol",
-    ]
+    # Check if file path is provided as command-line argument
+    if len(sys.argv) > 1:
+        files = sys.argv[1:]
+    else:
+        # Default test files
+        base = "test/project-testcases"
+        files = [
+            # f"{base}/01_variables.lol",
+            f"{base}/02_gimmeh.lol",
+            # f"{base}/03_arith.lol",
+            # f"{base}/04_smoosh_assign.lol",
+            # f"{base}/05_bool.lol",
+            # f"{base}/06_comparison.lol",
+            # f"{base}/07_ifelse.lol",
+            # f"{base}/08_switch.lol",
+            # f"{base}/09_loops.lol",
+            # f"{base}/10_functions.lol",
+        ]
 
     for path in files:
         try:

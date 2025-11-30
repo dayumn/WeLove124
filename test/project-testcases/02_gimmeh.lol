@@ -7,10 +7,12 @@ HAI
 
     GIMMEH monde
 
-    VISIBLE SUM OF monde AN num
+    VISIBLE ...
+    SUM OF monde AN num
     VISIBLE monde
 
-    GIMMEH num
+    GIMMEH
+    num
     GIMMEH monde
 
     VISIBLE DIFF OF num AN monde
