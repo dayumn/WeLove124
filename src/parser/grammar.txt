@@ -43,7 +43,7 @@
 
 <arithmetic_expr> ::= SUM OF <arithmetic_op> AN <arithmetic_op> | DIFF OF <arithmetic_op> AN <arithmetic_op> | PRODUKT OF <arithmetic_op> AN <arithmetic_op> | QUOSHUNT OF <arithmetic_op> AN <arithmetic_op> | MOD OF <arithmetic_op> AN <arithmetic_op>
 
-<arithmetic_op> ::= <arithmetic_expr> | <literal> | varident
+<arithmetic_op> ::= <arithmetic_expr> | <literal> | varident | <array_access>
 
 <comparison> ::= BOTH SAEM <nestable_expr> AN <nestable_expr> | DIFFRINT <nestable_expr> AN <nestable_expr>
 
@@ -55,7 +55,7 @@
 
 <array_access> ::= uhsident [ <index_expr> ]
 
-<index_expr> ::= numbr | varident | <arithmetic_expr>
+<index_expr> ::= numbr | varident | <arithmetic_expr> | <array_access>
 
 <array_operation> ::= CONFINE <nestable_expr> IN uhsident AT <index_expr> | DISCHARGE uhsident AT <index_expr>
 

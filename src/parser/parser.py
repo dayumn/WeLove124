@@ -1454,16 +1454,21 @@ class Parser:
 
   def index_expression(self):
     res = ParseResult()
-    # Grammar: <index_expr> ::= numbr | varident | <arithmetic_expr>
+    # Grammar: <index_expr> ::= numbr | varident | <arithmetic_expr> | <array_access>
 
     if self.current_token['type'] == TokenType.INTEGER:
       res.node = res.register(self.arithmetic_literal())
     elif self.current_token['type'] == TokenType.IDENTIFIER:
-      res.node = res.register(self.variable_literal())
+      # Check if this is array access
+      next_token = self.peek()
+      if next_token and next_token['type'] == TokenType.LBRACKET:
+        res.node = res.register(self.array_access())
+      else:
+        res.node = res.register(self.variable_literal())
     elif self.current_token['type'] in (TokenType.SUM_OF, TokenType.DIFF_OF, TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.MOD_OF):
       res.node = res.register(self.arithmetic_binary_operation())
     else:
-      return res.failure(self.syntax_error(self.current_token, 'integer, variable, or arithmetic expression', self.current_token['value'], category='Array Index', context_kind='index_expr'))
+      return res.failure(self.syntax_error(self.current_token, 'integer, variable, array access, or arithmetic expression', self.current_token['value'], category='Array Index', context_kind='index_expr'))
 
     return res
 
