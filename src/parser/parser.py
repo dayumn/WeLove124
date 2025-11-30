@@ -276,7 +276,7 @@ class Error:
       return f"{self.error_name}: '{self.token['value']}' at line {self.token['line']}\nDetails: {self.details}\n"
 
 class InvalidSyntaxError(Error):
-  def __init__(self, token, details, expected=None, found=None, category=None, context_kind=None, start_token=None, failing_token=None):
+  def __init__(self, token, details, expected=None, found=None, category=None, context_kind=None, start_token=None, failing_token=None, parse_stack=None):
     # token retained for backward compatibility (primary pointer)
     super().__init__(token, details, error_name='Invalid Syntax')
     self.expected = expected
@@ -285,25 +285,44 @@ class InvalidSyntaxError(Error):
     self.context_kind = context_kind
     self.start_token = start_token or token
     self.failing_token = failing_token or token
+    self.parse_stack = parse_stack or []
 
   def as_string(self):
     base_cat = self.category or (self.start_token.get('category') if isinstance(self.start_token, dict) else None) or (self.start_token.get('type').value if isinstance(self.start_token, dict) else 'UNKNOWN')
     lexeme = self.start_token['value'] if isinstance(self.start_token, dict) else '<UNKNOWN>'
     line = self.start_token['line'] if isinstance(self.start_token, dict) else 0
-    expected_part = ''
-    if self.expected is not None:
+    
+    # Get filename from parse_stack or use <stdin> as fallback
+    filename = self.parse_stack[0]['filename'] if self.parse_stack else '<stdin>'
+    
+    # Format: File "line X", SyntaxError: message
+    msg = f'  File "{filename}", line {line}\n'
+    msg += f'SyntaxError: '
+    
+    # Build error message
+    if self.expected and self.found:
       if isinstance(self.expected, (list, tuple)):
-        expected_part = f"Expected one of [{', '.join(self.expected)}]"
+        msg += f"expected {' or '.join(repr(e) for e in self.expected)}, got '{self.found}'"
       else:
-        expected_part = f"Expected {self.expected}"
-    found_part = ''
-    if self.found is not None:
-      found_part = f"Found {self.found}"
-    detail_core = ' | '.join([p for p in [expected_part, found_part] if p])
-    if detail_core:
-      msg = f"Invalid Syntax: {base_cat} '{lexeme}' line {line} | {detail_core}"
+        msg += f"expected '{self.expected}', got '{self.found}'"
+    elif self.expected:
+      if isinstance(self.expected, (list, tuple)):
+        msg += f"expected {' or '.join(repr(e) for e in self.expected)}"
+      else:
+        msg += f"expected '{self.expected}'"
+    elif self.details:
+      msg += self.details
     else:
-      msg = f"Invalid Syntax: {base_cat} '{lexeme}' line {line} | {self.details}"
+      msg += f"invalid syntax near '{lexeme}'"
+    
+    # Add parsing context as traceback
+    if self.parse_stack:
+      traceback = "Traceback (most recent call last):\n"
+      for ctx in self.parse_stack:
+        ctx_filename = ctx.get('filename', '<stdin>')
+        traceback += f'  File "{ctx_filename}", line {ctx["line"]}, in {ctx["function"]}\n'
+      msg = traceback + msg
+    
     return msg + "\n"
 
 class RuntimeError(Error):
@@ -330,10 +349,28 @@ class RuntimeError(Error):
 #------------------------------------------------------------------------------------------------
 
 class Parser:
-  def __init__(self, tokens):
+  def __init__(self, tokens, filename='<stdin>'):
     self.tokens = tokens
     self.token_index = -1
+    self.parse_stack = []  # Stack to track parsing context
+    self.filename = filename
     self.advance()
+  
+  def push_context(self, function_name, expected=None):
+    """Push a parsing context onto the stack"""
+    ctx = {
+      'function': function_name,
+      'line': self.current_token['line'] if self.current_token else 0,
+      'token': self.current_token,
+      'expected': expected,
+      'filename': self.filename
+    }
+    self.parse_stack.append(ctx)
+  
+  def pop_context(self):
+    """Pop the most recent parsing context"""
+    if self.parse_stack:
+      self.parse_stack.pop()
 
   # Standardized error factory
   def syntax_error(self, start_token, expected, found=None, category=None, context_kind=None, failing_token=None):
@@ -351,7 +388,8 @@ class Parser:
       category=category or (start_token.get('category') if isinstance(start_token, dict) else None),
       context_kind=context_kind,
       start_token=start_token,
-      failing_token=failing_token or self.current_token
+      failing_token=failing_token or self.current_token,
+      parse_stack=list(self.parse_stack)  # Copy current stack
     )
 
   def peek(self, offset=1):
@@ -367,11 +405,13 @@ class Parser:
     return self.current_token
 
   def parse(self):
+    self.push_context('program', 'HAI ... KTHXBYE')
     res = ParseResult()
     sections = []
     start = self.current_token if self.current_token else {'value':'<START>','line':1,'type':'<START>','category':'Start'}
     if (self.current_token['type'] != TokenType.HAI):
-      return res.failure(InvalidSyntaxError(start, "Missing program start", expected='HAI', found=(self.current_token['value'] if self.current_token else 'end of input'), category='Program Delimiter', context_kind='program', start_token=start))
+      self.pop_context()
+      return res.failure(InvalidSyntaxError(start, "Missing program start", expected='HAI', found=(self.current_token['value'] if self.current_token else 'end of input'), category='Program Delimiter', context_kind='program', start_token=start, parse_stack=list(self.parse_stack)))
 
     self.advance() # Eat HAI
 
@@ -379,17 +419,23 @@ class Parser:
     if self.current_token['type'] == TokenType.WAZZUP:
       self.advance() # Eat Wazzup
       variable_declaration_section =  res.register(self.variable_section())
-      if variable_declaration_section is None: return res   # Check if there's an error
+      if variable_declaration_section is None:
+        self.pop_context()
+        return res   # Check if there's an error
       sections.append(variable_declaration_section)         # No error
     # If we see a variable declaration outside of WAZZUP
     elif self.current_token['type'] == TokenType.I_HAS_A:
-      return res.failure(InvalidSyntaxError(self.current_token, "Var decl outside WAZZUP", expected=['WAZZUP','statement'], found='I HAS A', category='Variable Declaration', context_kind='program', start_token=self.current_token))
+      self.pop_context()
+      return res.failure(InvalidSyntaxError(self.current_token, "Var decl outside WAZZUP", expected=['WAZZUP','statement'], found='I HAS A', category='Variable Declaration', context_kind='program', start_token=self.current_token, parse_stack=list(self.parse_stack)))
 
     # try to parse statements
     list_of_statements = res.register(self.statement_list())
-    if list_of_statements is None: return res               # Check if there's an error
+    if list_of_statements is None:
+      self.pop_context()
+      return res               # Check if there's an error
     sections.append(list_of_statements)                     # No error
 
+    self.pop_context()
     return res.success(ProgramNode(sections))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -479,50 +525,72 @@ class Parser:
     return res.success(StatementListNode(statements))
 
   def statement(self):
+    self.push_context('statement', 'any valid statement')
     res = ParseResult()
     # Grammar: <statement> ::= <expression> | <conditional> | <loop> | <function_call> | <function_def> | <declaration> | <input> | <output>
 
     # Try declaration (I HAS A)
     if self.current_token['type'] == TokenType.I_HAS_A:
       res.node = res.register(self.variable_declaration())
-      if res.error or res.node: return res
+      if res.error or res.node:
+        self.pop_context()
+        return res
 
     # Try output (VISIBLE)
     res.node = res.register(self.print_statement())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try input (GIMMEH)
     res.node = res.register(self.input_statement())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try conditional (O RLY or WTF)
     res.node = res.register(self.if_statement())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     res.node = res.register(self.switch_case_statement())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try loop (IM IN YR)
     res.node = res.register(self.loop_statement())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try function definition (HOW IZ I)
     res.node = res.register(self.function_definition())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try function call (I IZ)
     res.node = res.register(self.function_call())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try break statement (GTFO)
     res.node = res.register(self.break_statement())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Try expression (includes assignment with R)
     res.node = res.register(self.expression())
-    if res.error or res.node: return res
+    if res.error or res.node:
+      self.pop_context()
+      return res
 
     # Can't parse
+    self.pop_context()
     return res.failure(InvalidSyntaxError(self.current_token, 'Unexpected Syntax', expected='statement', found=self.current_token['value'], category='Statement', context_kind='statement', start_token=self.current_token))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1060,6 +1128,7 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def if_statement(self):
+    self.push_context('if_statement', 'O RLY? ... OIC')
     res = ParseResult()
     # Grammar: <if_case> ::= <nestable_expr>, O RLY? <linebreak> <if_true> <if_false> OIC
     # Note: The nestable_expr should be parsed before calling this method
@@ -1071,6 +1140,7 @@ class Parser:
 
       # Parse if_true: YA RLY <linebreak> <statement_list> <linebreak>
       if self.current_token['type'] != TokenType.YA_RLY:
+        self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'YA RLY', self.current_token['value'], category='Conditional', context_kind='if'))
 
       self.advance() # Eat YA RLY
@@ -1117,14 +1187,17 @@ class Parser:
 
       # Expect OIC
       if self.current_token['type'] != TokenType.OIC:
+        self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'OIC', self.current_token['value'], category='Conditional', context_kind='if'))
 
       self.advance() # Eat OIC
 
       # For now, convert MEBBE to nested if-else structure
       # Store mebbe_cases in a way the interpreter can handle
+      self.pop_context()
       return res.success(IfNode(if_block_statements, else_block_statements, mebbe_cases))
 
+    self.pop_context()
     return res
 
 
