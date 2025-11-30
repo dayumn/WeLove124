@@ -583,11 +583,54 @@ class Parser:
       self.pop_context()
       return res
 
-    # Try expression (includes assignment with R)
-    res.node = res.register(self.expression())
-    if res.error or res.node:
-      self.pop_context()
-      return res
+    # Try expression-statements (operations and assignments (?), not literals)
+    if self.current_token['type'] == TokenType.IDENTIFIER:
+        identifier_token = self.current_token
+        self.advance()
+        
+        if self.current_token['type'] in (TokenType.R, TokenType.IS_NOW_A):
+            # if assignment, backtrack
+            self.token_index -= 1
+            self.current_token = self.tokens[self.token_index]
+            res.node = res.register(self.assignment_statement())
+            if res.error or res.node: return res
+        else:
+            # if identifier looks like existing tokens
+            suspicious_tokens = {
+                TokenType.QUOTE, TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING,
+                TokenType.IDENTIFIER, TokenType.WIN, TokenType.FAIL
+            }
+            if self.current_token['type'] in suspicious_tokens:
+                return res.failure(self.syntax_error(
+                    identifier_token, 
+                    'valid statement keyword or assignment operator',
+                    identifier_token['value'],
+                    category='Statement',
+                    context_kind='statement'
+                ))
+            else:
+                # backtrack to let it parse as expression
+                self.token_index -= 1
+                self.current_token = self.tokens[self.token_index]
+                return res.success(VarAccessNode(identifier_token))
+    elif self.current_token['type'] in (
+        # Arithmetic operations
+        TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, 
+        TokenType.DIFF_OF, TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF,
+        # Boolean operations
+        TokenType.BOTH_OF, TokenType.EITHER_OF, TokenType.WON_OF, TokenType.NOT,
+        TokenType.ALL_OF, TokenType.ANY_OF,
+        # Comparison operations
+        TokenType.BOTH_SAEM, TokenType.DIFFRINT,
+        # String operations
+        TokenType.SMOOSH,
+        # Typecasting
+        TokenType.MAEK
+    ):
+        res.node = res.register(self.expression())
+        if res.error or res.node:
+          self.pop_context()
+          return res
 
     # Can't parse
     self.pop_context()
