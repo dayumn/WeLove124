@@ -261,6 +261,40 @@ class ProgramNode:
   def __repr__(self):
     return f"ProgramNode({self.sections})"
 
+# Array Implementation
+
+class ArrayDeclarationNode:
+  def __init__(self, array_name_token, size_expr):
+    self.array_name_token = array_name_token
+    self.size_expr = size_expr
+
+  def __repr__(self):
+    return f"ArrayDecl({self.array_name_token['value']}, size={self.size_expr})"
+
+class ArrayAccessNode:
+  def __init__(self, array_name_token, index_expr):
+    self.array_name_token = array_name_token
+    self.index_expr = index_expr
+
+  def __repr__(self):
+    return f"ArrayAccess({self.array_name_token['value']}[{self.index_expr}])"
+
+class ArrayConfineNode:
+  def __init__(self, value_expr, array_name_token, index_expr):
+    self.value_expr = value_expr
+    self.array_name_token = array_name_token
+    self.index_expr = index_expr
+
+  def __repr__(self):
+    return f"CONFINE({self.value_expr} IN {self.array_name_token['value']} AT {self.index_expr})"
+
+class ArrayDischargeNode:
+  def __init__(self, array_name_token, index_expr):
+    self.array_name_token = array_name_token
+    self.index_expr = index_expr
+
+  def __repr__(self):
+    return f"DISCHARGE({self.array_name_token['value']} AT {self.index_expr})"
 
 #------------------------------------------------------------------------------------------------
 # ERRORS
@@ -517,6 +551,32 @@ class Parser:
       itz_token = self.current_token
       self.advance() # eats ITZ
 
+      # Check for array declaration: ITZ A UHS OF <size_expr>
+      if self.current_token['type'] == TokenType.A:
+        next_token = self.peek()
+        if next_token and next_token['type'] == TokenType.UHS:
+          self.advance() # Eat A
+          self.advance() # Eat UHS
+          
+          if self.current_token['type'] != TokenType.OF:
+            return res.failure(self.syntax_error(self.current_token, 'OF', self.current_token['value'], category='Array Declaration', context_kind='array_decl'))
+          
+          self.advance() # Eat OF
+          
+          # Parse size expression (can be integer literal or variable)
+          size_expr = None
+          if self.current_token['type'] == TokenType.INTEGER:
+            size_expr = res.register(self.arithmetic_literal())
+          elif self.current_token['type'] == TokenType.IDENTIFIER:
+            size_expr = res.register(self.variable_literal())
+          else:
+            return res.failure(self.syntax_error(self.current_token, 'INTEGER or IDENTIFIER', self.current_token['value'], category='Array Size', context_kind='array_decl'))
+          
+          if res.error: return res
+          
+          return res.success(ArrayDeclarationNode(var_name_token, size_expr))
+
+      # Regular variable declaration
       expression = res.register(self.expression())
       if res.error: return res
 
@@ -580,11 +640,18 @@ class Parser:
   def statement(self):
     self.push_context('statement', 'any valid statement')
     res = ParseResult()
-    # Grammar: <statement> ::= <expression> | <conditional> | <loop> | <function_call> | <function_def> | <declaration> | <input> | <output>
+    # Grammar: <statement> ::= <expression> | <conditional> | <loop> | <function_call> | <function_def> | <declaration> | <input> | <output> | <array_operation>
 
     # Try declaration (I HAS A)
     if self.current_token['type'] == TokenType.I_HAS_A:
       res.node = res.register(self.variable_declaration())
+      if res.error or res.node:
+        self.pop_context()
+        return res
+
+    # Try array operations (CONFINE, DISCHARGE)
+    if self.current_token['type'] in (TokenType.CONFINE, TokenType.DISCHARGE):
+      res.node = res.register(self.array_operation())
       if res.error or res.node:
         self.pop_context()
         return res
@@ -713,7 +780,7 @@ class Parser:
 
   def nestable_expr(self):
     res = ParseResult()
-    # Grammar: <nestable_expr> ::= <arithmetic_expr> | <boolean_nest> | <comparison> | <function_call> | <typecasting> | <literal> | <relational> | varident
+    # Grammar: <nestable_expr> ::= <arithmetic_expr> | <boolean_nest> | <comparison> | <function_call> | <typecasting> | <literal> | <relational> | varident | <array_access>
 
     # Try arithmetic expressions
     if self.current_token['type'] in (TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, TokenType.DIFF_OF, TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF):
@@ -740,9 +807,15 @@ class Parser:
       res.node = res.register(self.typecast())
       return res
 
-    # Try assignment (varident R or varident IS NOW A)
+    # Try array access or variable literal
     if self.current_token['type'] == TokenType.IDENTIFIER:
-      res.node = res.register(self.assignment_statement())
+      # Check if next token is LBRACKET for array access
+      next_token = self.peek()
+      if next_token and next_token['type'] == TokenType.LBRACKET:
+        res.node = res.register(self.array_access())
+      else:
+        # Just a variable reference, not an assignment
+        res.node = res.register(self.variable_literal())
       return res
 
     # Try literal
@@ -879,13 +952,18 @@ class Parser:
 
   def arithmetic_expression(self):
     res = ParseResult()
-    # Grammar: <arithmetic_op> ::= <arithmetic_expr> | <literal> | varident
+    # Grammar: <arithmetic_op> ::= <arithmetic_expr> | <literal> | varident | <array_access>
     token = self.current_token
 
     if token['type'] in (TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, TokenType.MOD_OF, TokenType.DIFF_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF):
       res.node = res.register(self.arithmetic_binary_operation())
     elif token['type'] == TokenType.IDENTIFIER:
-      res.node = res.register(self.variable_literal())
+      # Check if this is array access
+      next_token = self.peek()
+      if next_token and next_token['type'] == TokenType.LBRACKET:
+        res.node = res.register(self.array_access())
+      else:
+        res.node = res.register(self.variable_literal())
     elif token['type'] in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.NOOB):
       # Any literal can be used in arithmetic (will be implicitly typecast by interpreter)
       res.node = res.register(self.literal())
@@ -1256,6 +1334,137 @@ class Parser:
         return res.success(VarAssignmentNode(var_to_access, TypecastNode(VarAccessNode(var_to_access), desired_type)))
 
     self.pop_context()
+    return res
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════
+  def array_operation(self):
+    self.push_context('array_operation', 'CONFINE / DISCHARGE')
+    res = ParseResult()
+    # Grammar: <array_operation> ::= CONFINE <nestable_expr> IN uhsident AT <index_expr> | DISCHARGE uhsident AT <index_expr>
+
+    if self.current_token['type'] == TokenType.CONFINE:
+      self.advance() # Eat CONFINE
+
+      # Parse value expression
+      value_expr = res.register(self.nestable_expr())
+      if res.error:
+        self.pop_context()
+        return res
+      if value_expr is None:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'value expression', self.current_token['value'], category='Array Operation', context_kind='confine'))
+
+      # Expect IN
+      if self.current_token['type'] != TokenType.IN:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'IN', self.current_token['value'], category='Array Operation', context_kind='confine'))
+      self.advance() # Eat IN
+
+      # Expect array identifier
+      if self.current_token['type'] != TokenType.IDENTIFIER:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'array identifier', self.current_token['value'], category='Array Operation', context_kind='confine'))
+      array_name_token = self.current_token
+      self.advance() # Eat identifier
+
+      # Expect AT
+      if self.current_token['type'] != TokenType.AT:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'AT', self.current_token['value'], category='Array Operation', context_kind='confine'))
+      self.advance() # Eat AT
+
+      # Parse index expression
+      index_expr = res.register(self.index_expression())
+      if res.error:
+        self.pop_context()
+        return res
+      if index_expr is None:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'index expression', self.current_token['value'], category='Array Operation', context_kind='confine'))
+
+      self.pop_context()
+      return res.success(ArrayConfineNode(value_expr, array_name_token, index_expr))
+
+    elif self.current_token['type'] == TokenType.DISCHARGE:
+      self.advance() # Eat DISCHARGE
+
+      # Expect array identifier
+      if self.current_token['type'] != TokenType.IDENTIFIER:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'array identifier', self.current_token['value'], category='Array Operation', context_kind='discharge'))
+      array_name_token = self.current_token
+      self.advance() # Eat identifier
+
+      # Expect AT
+      if self.current_token['type'] != TokenType.AT:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'AT', self.current_token['value'], category='Array Operation', context_kind='discharge'))
+      self.advance() # Eat AT
+
+      # Parse index expression
+      index_expr = res.register(self.index_expression())
+      if res.error:
+        self.pop_context()
+        return res
+      if index_expr is None:
+        self.pop_context()
+        return res.failure(self.syntax_error(self.current_token, 'index expression', self.current_token['value'], category='Array Operation', context_kind='discharge'))
+
+      self.pop_context()
+      return res.success(ArrayDischargeNode(array_name_token, index_expr))
+
+    self.pop_context()
+    return res
+
+  def array_access(self):
+    self.push_context('array_access', 'array[index]')
+    res = ParseResult()
+    # Grammar: <array_access> ::= uhsident [ <index_expr> ]
+
+    if self.current_token['type'] != TokenType.IDENTIFIER:
+      self.pop_context()
+      return res.failure(self.syntax_error(self.current_token, 'array identifier', self.current_token['value'], category='Array Access', context_kind='array_access'))
+    
+    array_name_token = self.current_token
+    self.advance() # Eat identifier
+
+    # Expect LBRACKET
+    if self.current_token['type'] != TokenType.LBRACKET:
+      self.pop_context()
+      return res.failure(self.syntax_error(self.current_token, '[', self.current_token['value'], category='Array Access', context_kind='array_access'))
+    self.advance() # Eat [
+
+    # Parse index expression
+    index_expr = res.register(self.index_expression())
+    if res.error:
+      self.pop_context()
+      return res
+    if index_expr is None:
+      self.pop_context()
+      return res.failure(self.syntax_error(self.current_token, 'index expression', self.current_token['value'], category='Array Access', context_kind='array_access'))
+
+    # Expect RBRACKET
+    if self.current_token['type'] != TokenType.RBRACKET:
+      self.pop_context()
+      return res.failure(self.syntax_error(self.current_token, ']', self.current_token['value'], category='Array Access', context_kind='array_access'))
+    self.advance() # Eat ]
+
+    self.pop_context()
+    return res.success(ArrayAccessNode(array_name_token, index_expr))
+
+  def index_expression(self):
+    res = ParseResult()
+    # Grammar: <index_expr> ::= numbr | varident | <arithmetic_expr>
+
+    if self.current_token['type'] == TokenType.INTEGER:
+      res.node = res.register(self.arithmetic_literal())
+    elif self.current_token['type'] == TokenType.IDENTIFIER:
+      res.node = res.register(self.variable_literal())
+    elif self.current_token['type'] in (TokenType.SUM_OF, TokenType.DIFF_OF, TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.MOD_OF):
+      res.node = res.register(self.arithmetic_binary_operation())
+    else:
+      return res.failure(self.syntax_error(self.current_token, 'integer, variable, or arithmetic expression', self.current_token['value'], category='Array Index', context_kind='index_expr'))
+
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════

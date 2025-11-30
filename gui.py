@@ -160,10 +160,11 @@ class InterpreterWorker(QThread):
     finished = pyqtSignal()
     error_occurred = pyqtSignal(str)
     
-    def __init__(self, content, console_widget):
+    def __init__(self, content, console_widget, filename=None):
         super().__init__()
         self.content = content
         self.console_widget = console_widget
+        self.filename = filename
         self.tokens = None
         self.symbol_table_obj = None
     
@@ -177,7 +178,7 @@ class InterpreterWorker(QThread):
             self.update_tokens.emit(self.tokens)
             
             # parsing
-            parser = Parser(self.tokens)
+            parser = Parser(self.tokens, filename=self.filename)
             AST = parser.parse()
             
             if AST.error:
@@ -549,6 +550,7 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
     
     current_tab = tab_widget.widget(current_index)
     content_manager = current_tab.property("content_manager")
+    file_manager = current_tab.property("file_manager")
     
     if content_manager.saved_content is None:
         console_widget.write("Error: Please save the file first (Ctrl+S)", "#FF6B6B") # error handling
@@ -558,7 +560,7 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
     console_widget.clear()
 
     #--FIXED: calling widget methods from non-GUI thread--#
-    worker = InterpreterWorker(content_manager.saved_content, console_widget)   # create worker thread  
+    worker = InterpreterWorker(content_manager.saved_content, console_widget, filename=file_manager.file_name)   # create worker thread  
    
     # connect signals
     worker.output_ready.connect(lambda text, color: console_widget.write(text, color))
@@ -1062,8 +1064,19 @@ def main(): # Main Function
     # set global font
     global_font_custom = QFontDatabase().addApplicationFont("src/assets/font/inter.ttf")
     global_font_custom1 = QFontDatabase().addApplicationFont("src/assets/font/Consolas.ttf")  
-    global_font_family = QFontDatabase.applicationFontFamilies(global_font_custom)[0]
-    global_font_family1 = QFontDatabase.applicationFontFamilies(global_font_custom1)[0]
+    
+    # Check if fonts loaded successfully, otherwise use system defaults
+    if global_font_custom != -1:
+        global_font_family = QFontDatabase.applicationFontFamilies(global_font_custom)[0]
+    else:
+        print("Warning: Could not load Inter font, using system default")
+        global_font_family = "Arial"  # Fallback font
+    
+    if global_font_custom1 != -1:
+        global_font_family1 = QFontDatabase.applicationFontFamilies(global_font_custom1)[0]
+    else:
+        print("Warning: Could not load Consolas font, using system default")
+        global_font_family1 = "Courier New"  # Fallback monospace font
 
     #--- VSCODE-LIKE THEME STYLESHEET ----
     win.setStyleSheet("""
