@@ -183,7 +183,7 @@ def create_token(token_type, value, line, col):
         'category': None,
 }
 
-CATEGORY_MAP = {
+CATEGORY_MAP = { # TokenType: Category Name
 
     # --- Boolean Values ---
     TokenType.WIN: "Boolean Value (True)",

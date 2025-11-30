@@ -38,19 +38,18 @@ class InteractiveConsole(QTextEdit):
     """Interactive console widget that handles input/output in a single text area"""
     input_requested = pyqtSignal()
     
-    def __init__(self):
+    def __init__(self, global_font):
         super().__init__()
         self.input_queue = queue.Queue()
         self.waiting_for_input = False
         self.input_buffer = ""
         self.input_start_pos = 0
         self.input_requested.connect(self._request_input_slot)
+        self.global_font = global_font  
         self.setup_ui()
     
     def setup_ui(self):
-        font_custom = QFontDatabase().addApplicationFont("src/assets/font/consolas.ttf")  
-        font = QFontDatabase.applicationFontFamilies(font_custom)[0]
-        inter = QFont(font, 11)
+        inter = QFont(self.global_font, 11)
         self.setFont(inter)
         self.setStyleSheet("""
             QTextEdit {
@@ -58,8 +57,7 @@ class InteractiveConsole(QTextEdit):
                 color: #FAFAFA;
                 border: none;
                 padding: 20px;
-                border-top: 1px solid #393939;
-                
+                border-top: 1px solid #393939;   
             }
         """)
         self.setReadOnly(False)
@@ -152,29 +150,21 @@ class InteractiveConsole(QTextEdit):
         return self.input_queue.get()
 
 # Helper function to reset zoom
-def reset_zoom(text_input, default_size):
-    font_custom = QFontDatabase().addApplicationFont("src/assets/font/inter.ttf")  
-    font = QFontDatabase.applicationFontFamilies(font_custom)[0]
-    inter_font =  QFont(font, 10)
+def reset_zoom(text_input, default_size, global_font):
+    inter_font =  QFont(global_font, default_size)
     text_input.setFont(inter_font)
+    text_input.setFont(global_font)
 
-    text_input.setFont(font)
-
-def text_edit(text_editor, file_manager, content_manager, parent_widget): # Text editor panel
+def text_edit(text_editor, file_manager, content_manager, parent_widget, global_font): # Text editor panel
     editor_layout = QVBoxLayout() # main vertical layout
     text_editor.setLayout(editor_layout)
     text_editor.setStyleSheet("background-color: #1F1F1F; border: none;")   
-
-
     text_input = QTextEdit() 
     text_input.setPlaceholderText("Type here...")
 
     # custom font
-    
-    font_custom = QFontDatabase().addApplicationFont("src/assets/font/consolas.ttf") 
-    font = QFontDatabase.applicationFontFamilies(font_custom)[0]
-    inter_font =  QFont(font, 11)
-    text_input.setFont(inter_font)
+    consolas_font =  QFont(global_font, 11)
+    text_input.setFont(consolas_font)
     text_input.setStyleSheet("border: none; color: #FAFAFA;") 
 
 
@@ -193,9 +183,9 @@ def text_edit(text_editor, file_manager, content_manager, parent_widget): # Text
     zoom_out_shortcut = QShortcut(QKeySequence.ZoomOut, text_input)  # Ctrl+Minus (Cmd+Minus on Mac)
     zoom_out_shortcut.activated.connect(text_input.zoomOut)
     zoom_reset_shortcut = QShortcut(QKeySequence("Ctrl+0"), text_input) # for resetting zoom
-    zoom_reset_shortcut.activated.connect(lambda: reset_zoom(text_input, 9))
+    zoom_reset_shortcut.activated.connect(lambda: reset_zoom(text_input, 9, global_font))
     zoom_reset_shortcut_mac = QShortcut(QKeySequence("Meta+0"), text_input)
-    zoom_reset_shortcut_mac.activated.connect(lambda: reset_zoom(text_input, 9))
+    zoom_reset_shortcut_mac.activated.connect(lambda: reset_zoom(text_input, 9, global_font))
 
     # keyboard shortcut actions
     save_shortcut.activated.connect(lambda: save_and_store(text_input, file_manager, content_manager, parent_widget))
@@ -207,8 +197,8 @@ def text_edit(text_editor, file_manager, content_manager, parent_widget): # Text
     selectall_shortcut.activated.connect(lambda: text_input.selectAll())
     zoom_in_shortcut.activated.connect(lambda: text_input.zoomIn())
     zoom_out_shortcut.activated.connect(lambda: text_input.zoomOut())
-    zoom_reset_shortcut.activated.connect(lambda: reset_zoom(text_input, 11))
-    zoom_reset_shortcut_mac.activated.connect(lambda: reset_zoom(text_input, 11))
+    zoom_reset_shortcut.activated.connect(lambda: reset_zoom(text_input, 11, global_font))
+    zoom_reset_shortcut_mac.activated.connect(lambda: reset_zoom(text_input, 11, global_font))
 
   
     
@@ -465,7 +455,7 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
     thread.start()
 
 
-def create_table(parent_widget, label1, label2): # Func for creating tables
+def create_table(parent_widget, label1, label2, global_font): # Func for creating tables
     token_layout = QVBoxLayout()
     parent_widget.setLayout(token_layout) # set it as layout for the identifier/lexeme widget 
     
@@ -515,13 +505,8 @@ def create_table(parent_widget, label1, label2): # Func for creating tables
     """)
 
 
-    
-
-
     # set font
-    font_custom = QFontDatabase().addApplicationFont("src/assets/font/inter.ttf")  
-    font = QFontDatabase.applicationFontFamilies(font_custom)[0]
-    inter_font =  QFont(font, 10)
+    inter_font =  QFont(global_font, 10)
     table.setFont(inter_font)
     table.horizontalHeader().setFont(inter_font)
     
@@ -652,7 +637,7 @@ def update_symbol_table(table, symbol_table_obj): # Update table func
             
 
 
-def create_new_tab(tab_widget, win, file_name = None, content = None):
+def create_new_tab(tab_widget, win,  global_font, file_name = None, content = None): # create new tab function
     # create new manager for this tab
     file_manager = FileManager()
     content_manager = TextContentManager()
@@ -662,7 +647,7 @@ def create_new_tab(tab_widget, win, file_name = None, content = None):
     text_editor.setStyleSheet("background-color: #1F1F1F; border: none; padding: 20px;")
 
     # create text input
-    text_input = text_edit(text_editor, file_manager, content_manager, win)
+    text_input = text_edit(text_editor, file_manager, content_manager, win, global_font)
 
     # if content is provided:
     if content:
@@ -705,7 +690,7 @@ def create_new_tab(tab_widget, win, file_name = None, content = None):
 
     return text_editor
 
-def file_open(tab_widget, win): # open file and load content
+def file_open(tab_widget, win, global_font): # open file and load content
     options = QFileDialog.Options() # opens file manager
     file_name, _ = QFileDialog.getOpenFileName(
         None, "Select a File", "", "All Files (*);;Text Files (*.txt);;LOLCode Files (*.lol)", options=options
@@ -716,7 +701,7 @@ def file_open(tab_widget, win): # open file and load content
             with open(file_name, 'r') as file:
                 content = file.read()
                # create new tab with file content
-                create_new_tab(tab_widget, win, file_name, content)
+                create_new_tab(tab_widget, win, global_font, file_name, content )
                 print(f"File opened: {file_name}")
         except Exception as e:
             print(f"Error opening file: {e}")
@@ -733,7 +718,7 @@ def save_current_tab(tab_widget, win): # For saving current tab's status
     
     save_and_store(text_input, file_manager, content_manager, win)
 
-def layout(win):
+def layout(win, global_font, global_font1): # Main Layout
     main_widget = QWidget()
     win.setCentralWidget(main_widget)
 
@@ -756,9 +741,9 @@ def layout(win):
     menu_btn.setFlat(True)
 
     file_icon = QLabel()
-    file_icon.setFixedSize(25,25)
-    icon = QPixmap('src/assets/folder.png')
-    icon = icon.scaled(25,25,Qt.KeepAspectRatio, Qt.SmoothTransformation)
+    file_icon.setFixedSize(15,15)
+    icon = QPixmap('src/assets/search.png')
+    icon = icon.scaled(15,15,Qt.KeepAspectRatio, Qt.SmoothTransformation)
     file_icon.setPixmap(icon)
 
     exec_btn = QPushButton()
@@ -786,24 +771,27 @@ def layout(win):
     tab_widget.setMovable(True)
 
     # set font
-    font_custom = QFontDatabase().addApplicationFont("src/assets/font/inter.ttf")  
-    font = QFontDatabase.applicationFontFamilies(font_custom)[0]
-    inter_font =  QFont(font, 9)
+    inter_font =  QFont(global_font, 9)
     tab_widget.setFont(inter_font)
 
-    
+    # TO DO: fix icon alignment with text | fix color of icon !!
     file_searcher = QPushButton('Open File')
     file_searcher.setFixedHeight(30)
     file_searcher.setFont(inter_font)
+    file_searcher.setIcon(QIcon(file_icon.pixmap()))
      
-  
+    # search file 
     search_button_layout.addWidget(file_searcher)
+   
+
+    # main file searcher layout !! TO DO: fix icon hover !!
     file_searcher_layout.addWidget(menu_btn,1)
     file_searcher_layout.addStretch(1)
     file_searcher_layout.addLayout(search_button_layout, 1)
     file_searcher_layout.addStretch(1)
     file_searcher_layout.addWidget(exec_btn,1)
     file_searcher_layout.setContentsMargins(10,10,10,10)
+    file_searcher_layout.borderWidth = 1
     
     
     
@@ -812,16 +800,16 @@ def layout(win):
     token_view_widget = QWidget()
     
     # console at bottom
-    console = InteractiveConsole()
+    console = InteractiveConsole(global_font1)
   
     # create symbol table and lexeme table (vertically stacked)
-    symbol_table = create_table(symbol_table_widget, "Identifier", "Value")
-    token_table = create_table(token_view_widget, "Lexeme", "Classification")
+    symbol_table = create_table(symbol_table_widget, "Identifier", "Value", global_font)
+    token_table = create_table(token_view_widget, "Lexeme", "Classification", global_font)
 
-    ##### STYLE ##############
-    
+    # container layot for text editor, console, symbol table, lexeme table
+    container_frame = QFrame()
 
-
+    #------ STYLE------#
     tab_widget.setStyleSheet("""
         QTabWidget::pane {
             border: none;
@@ -863,16 +851,17 @@ def layout(win):
 
     token_view_widget.setStyleSheet("background-color: #1A1A1A;border-right: 1px solid #393939; border-radius: 7px;")
     symbol_table_widget.setStyleSheet("background-color: #1F1F1F; border-right: 1px solid #393939; border-radius: 7px;")
-    ###### STYLE ###########
+    container_frame.setStyleSheet("border-top: 1px solid #393939; border-bottom: 1px solid #393939;border-right:1px solid #393939;  margin: 0px; padding: 0px;")
+    #------ END OF STYLE ------#
 
     # connect actions
-    new_file_action.triggered.connect(lambda: create_new_tab(tab_widget, win))
-    open_file_action.triggered.connect(lambda: file_open(tab_widget, win))
+    new_file_action.triggered.connect(lambda: create_new_tab(tab_widget, win, global_font1))
+    open_file_action.triggered.connect(lambda: file_open(tab_widget, win, global_font1))
     save_file_action.triggered.connect(lambda: save_current_tab(tab_widget, win))
     
     menu_btn.clicked.connect(lambda: menu.exec_(menu_btn.mapToGlobal(menu_btn.rect().bottomLeft())))
     exec_btn.clicked.connect(lambda: execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console))
-    file_searcher.clicked.connect(lambda: file_open(tab_widget, win))
+    file_searcher.clicked.connect(lambda: file_open(tab_widget, win, global_font1))
     
     # create general shortcuts
     openfile_shortcut = QShortcut(QKeySequence("Ctrl+O"), win) # bind key to open file
@@ -883,15 +872,15 @@ def layout(win):
     new_file_action_shortcutMac = QShortcut(QKeySequence("Meta+N"), win) # bind key to new file (macOS)
 
     # shortcut actions
-    openfile_shortcut.activated.connect(lambda: file_open(tab_widget, win))
-    openfile_shortcutMac.activated.connect(lambda: file_open(tab_widget, win))
+    openfile_shortcut.activated.connect(lambda: file_open(tab_widget, win, global_font1))
+    openfile_shortcutMac.activated.connect(lambda: file_open(tab_widget, win, global_font1))
     runfile_shortcutMac.activated.connect(lambda: execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console))
     runfile_shortcut.activated.connect(lambda: execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console))
-    new_file_action_shortcut.activated.connect(lambda: create_new_tab(tab_widget, win))
-    new_file_action_shortcutMac.activated.connect(lambda: create_new_tab(tab_widget, win))
+    new_file_action_shortcut.activated.connect(lambda: create_new_tab(tab_widget, win, global_font1))
+    new_file_action_shortcutMac.activated.connect(lambda: create_new_tab(tab_widget, win, global_font1))
 
     # create initial empty tab
-    create_new_tab(tab_widget, win)
+    create_new_tab(tab_widget, win, global_font1)
 
     # text editor layout
     minor_layout.addWidget(tab_widget, 2)
@@ -900,7 +889,7 @@ def layout(win):
     # right column layout (symbol table on top, lexeme table on bottom)
     right_column.addWidget(symbol_table_widget, 1)
     right_column.addWidget(token_view_widget, 1)
-    right_column.setContentsMargins(10,0,10,10)
+    right_column.setContentsMargins(10,15,10,15)
     right_column.setSpacing(20)
    
     # main horizontal layout
@@ -910,34 +899,34 @@ def layout(win):
     side_layout.addWidget(console, 2)
     side_layout.setContentsMargins(0,0,0,0)
     side_layout.setSpacing(0)
-   
-    main_frame.setStyleSheet("border-top: 1px solid #393939; border-bottom: 1px solid #393939;border-right:1px solid #393939;  margin: 0px; padding: 0px;")  
 
-     # container layout for text editor, console, symbol table, lexeme table
+    # container layout
     container_layout = QHBoxLayout()
     container_layout.addWidget(main_frame, 3)
     container_layout.addLayout(right_column, 1)
     container_layout.setContentsMargins(0,0,0,0)
-  
-
+    container_frame.setLayout(container_layout)
 
     # vertical layout
     main_layout.addLayout(file_searcher_layout, 0)
-    main_layout.addLayout(container_layout)
+    main_layout.addWidget(container_frame)
     main_layout.setContentsMargins(0,0,0,0)
 
 
-
-  
-
-
-def main():
+def main(): # Main Function
     app = QApplication(sys.argv)
     win = QMainWindow()
-
     app.setWindowIcon(QIcon('src/assets/lolcode.png'))
     win.setGeometry(0, 0, 600, 400)
     win.setWindowTitle("WeLove124")
+
+    # set global font
+    global_font_custom = QFontDatabase().addApplicationFont("src/assets/font/inter.ttf")
+    global_font_custom1 = QFontDatabase().addApplicationFont("src/assets/font/Consolas.ttf")  
+    global_font_family = QFontDatabase.applicationFontFamilies(global_font_custom)[0]
+    global_font_family1 = QFontDatabase.applicationFontFamilies(global_font_custom1)[0]
+
+    #--- VSCODE-LIKE THEME STYLESHEET ----
     win.setStyleSheet("""
         QMainWindow {
             background-color: #181818;
@@ -1007,7 +996,9 @@ def main():
         }
     """)
 
-    layout(win)
+    #--- END OF THEME STYLESHEET ----
+
+    layout(win, global_font_family, global_font_family1)
     win.show()
 
     sys.exit(app.exec_())
