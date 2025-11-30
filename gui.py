@@ -274,7 +274,7 @@ def text_edit(text_editor, file_manager, content_manager, parent_widget, global_
     zoom_reset_shortcut_mac.activated.connect(lambda: reset_zoom(text_input, 9, global_font))
 
     # keyboard shortcut actions
-    save_shortcut.activated.connect(lambda: save_and_store(text_input, file_manager, content_manager, parent_widget))
+    save_shortcut.activated.connect(lambda: save_current_tab(parent_widget.centralWidget().findChild(QTabWidget), parent_widget))
     copy_shortcut.activated.connect(lambda: text_input.copy())
     paste_shortcut.activated.connect(lambda: text_input.paste())
     cut_shortcut.activated.connect(lambda: text_input.cut())
@@ -376,7 +376,7 @@ def highlight_words(text_input):
                 inside_multi = False
             char_count += len(line) + 1
             continue  # skip single-line check while inside multi
-        
+
         # -------- SINGLE LINE COMMENTS --------
         comment_idx = line.find(COMMENT_START)  # e.g. "BTW"
         if comment_idx != -1:
@@ -744,7 +744,8 @@ def file_open(tab_widget, win, global_font): # open file and load content
             print(f"Error opening file: {e}")
 
 def save_current_tab(tab_widget, win): # For saving current tab's status
-    current_index = tab_widget.currentIndex()
+    current_index = tab_widget.currentIndex() # get current tab
+
     if current_index == -1:
         return
     
@@ -753,7 +754,11 @@ def save_current_tab(tab_widget, win): # For saving current tab's status
     file_manager = current_tab.property("file_manager")
     content_manager = current_tab.property("content_manager")
     
-    save_and_store(text_input, file_manager, content_manager, win)
+    save_and_store(text_input, file_manager, content_manager, win) # save and store content
+      #---- Update tab title ----#
+    tab_widget.setTabText(current_index, os.path.basename(file_manager.file_name))
+    
+
 
 def layout(win, global_font, global_font1): # Main Layout
     main_widget = QWidget()
