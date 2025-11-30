@@ -317,6 +317,9 @@ def tokenize(code):
             string_col = col
             while pos < len(code) and code[pos] != '"' and code[pos] != '\n':
                 pos += 1
+
+            if pos < len(code) and code[pos] == '\n':
+                raise SyntaxError(f"Unclosed string literal at line {line}, col {string_col}")
             
             if pos > string_start:
                 value = code[string_start:pos]
