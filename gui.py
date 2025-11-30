@@ -1,545 +1,36 @@
+"""
+File Structure:
+    main.py       - Main application and UI layout
+    widgets.py    - Custom widget classes
+    utils.py      - Utility functions and managers
+"""
+
 import os
 import sys
-import queue
-import time
 import platform
-import builtins
 from pathlib import Path
-from PyQt5.QtGui import (QFont, QKeySequence, QTextCursor, QTextCharFormat, 
-                         QColor, QIcon, QFontDatabase, QPixmap, QPainter)
+
+from PyQt5.QtGui import QFont, QIcon, QFontDatabase, QKeySequence, QPixmap
 from PyQt5.QtWidgets import (QWidget, QApplication, QMainWindow, QFileDialog,
-                             QHBoxLayout, QVBoxLayout, QTextEdit,
-                             QShortcut, QInputDialog, QPushButton,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QLabel,
-                             QMenu, QTabWidget, QAction, QFrame, QPlainTextEdit)
-from PyQt5.QtCore import Qt, QThread, QSize, pyqtSignal
-from src.lexer import tokenizer
-from src.parser.parser import Parser
-from src.interpreter.runtime import SymbolTable, Context
-from src.interpreter.interpreter import Interpreter
+                             QHBoxLayout, QVBoxLayout, QShortcut, QInputDialog, 
+                             QPushButton, QTableWidget, QTableWidgetItem, 
+                             QHeaderView, QLabel, QMenu, QTabWidget, QAction, 
+                             QFrame)
+from PyQt5.QtCore import Qt, QSize
+
+# Import custom modules
+from src.gui.widgets import InteractiveConsole, InterpreterWorker, CodeEditor
+from src.gui.utils import (TextContentManager, FileManager, LexemeManager,
+                  highlight_syntax, reset_zoom, update_token_view, 
+                  update_symbol_table, COLORS, KEYWORD_COLORS)
+
 
 # ============================================================================
 # CONSTANTS
 # ============================================================================
+
 BASE_DIR = Path(__file__).parent.absolute()
 IS_MACOS = platform.system() == "Darwin"
-# Color scheme
-COLORS = {
-    'BACKGROUND': '#181818',
-    'EDITOR_BG': '#1F1F1F',
-    'TEXT': '#FAFAFA',
-    'COMMENT': '#6A9955',
-    'BORDER': '#393939',
-    'ACCENT': '#007ACC',
-    'SUCCESS': '#95E1D3',
-    'INFO': '#4ECDC4',
-    'ERROR': '#FF6B6B',
-}
-
-# Keyword colors for syntax highlighting
-KEYWORD_COLORS = {
-    "HAI": "#FF6B9D",
-    "KTHXBYE": "#FF6B9D",
-    "WAZZUP": "#FFA500",
-    "BUHBYE": "#FFA500",
-    "I HAS A": "#569CD6",
-    "ITZ": "#569CD6",
-    " R ": "#569CD6",
-    "VISIBLE": "#C586C0",
-    "GIMMEH": "#C586C0",
-    "AN": "#D4D4D4",
-    "NOOB": "#4EC9B0",
-    "NUMBR": "#4EC9B0",
-    "NUMBAR": "#4EC9B0",
-    "YARN": "#4EC9B0",
-    "TROOF": "#4EC9B0",
-    "WIN": "#D7BA7D",
-    "FAIL": "#D7BA7D",
-}
-
-
-# ============================================================================
-# MANAGER CLASSES
-# ============================================================================
-
-class TextContentManager:
-    """Manages text content persistence for a single file"""
-    def __init__(self):
-        self.saved_content = None
-
-
-class FileManager:
-    """Manages file names and paths for a single file"""
-    def __init__(self):
-        self.file_name = None
-
-
-class LexemeManager:
-    """Manages lexeme tokens (deprecated - kept for compatibility)"""
-    def __init__(self):
-        self.saved_lexemes = None
-
-
-# ============================================================================
-# INTERACTIVE CONSOLE WIDGET
-# ============================================================================
-
-class InteractiveConsole(QTextEdit):
-    """
-    Interactive console widget that handles both output display and user input.
-    Thread-safe implementation for use with interpreter worker threads.
-    """
-    input_requested = pyqtSignal()
-    
-    def __init__(self, font_family):
-        super().__init__()
-        self.input_queue = queue.Queue()
-        self.waiting_for_input = False
-        self.input_start_pos = 0
-        self.font_family = font_family
-        self.input_requested.connect(self._request_input_slot)
-        self._setup_ui()
-    
-    def _setup_ui(self):
-        """Initialize console UI styling"""
-        font = QFont(self.font_family, 11)
-        self.setFont(font)
-        self.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: {COLORS['BACKGROUND']};
-                color: {COLORS['TEXT']};
-                border: none;
-                padding: 20px;
-                border-top: 1px solid {COLORS['BORDER']};   
-            }}
-        """)
-        self.setReadOnly(True)
-        self.setMinimumHeight(150)
-    
-    def write(self, text, color=None):
-        """Write text to console with optional color"""
-        if color is None:
-            color = COLORS['TEXT']
-            
-        cursor = self.textCursor()
-        cursor.movePosition(QTextCursor.End)
-        
-        fmt = QTextCharFormat()
-        fmt.setForeground(QColor(color))
-        cursor.setCharFormat(fmt)
-        
-        cursor.insertText(text + "\n")
-        self.setTextCursor(cursor)
-        self.ensureCursorVisible()
-    
-    def clear(self):
-        """Clear console and reset input state"""
-        super().clear()
-        self.waiting_for_input = False
-    
-    def _request_input_slot(self):
-        """Enable input mode (must be called from main thread)"""
-        self.waiting_for_input = True
-        self.input_start_pos = self.textCursor().position()
-        self.setReadOnly(False)
-        self.setFocus()
-    
-    def request_input(self):
-        """Request input from user - thread-safe"""
-        self.input_requested.emit()
-    
-    def keyPressEvent(self, event):
-        """Handle keyboard input"""
-        if not self.waiting_for_input:
-            event.ignore()
-            return
-        
-        cursor = self.textCursor()
-        
-        # prevent editing previous content
-        if cursor.position() < self.input_start_pos:
-            cursor.setPosition(self.input_start_pos)
-            self.setTextCursor(cursor)
-        
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            # extract user input
-            cursor.movePosition(QTextCursor.End)
-            cursor.setPosition(self.input_start_pos, QTextCursor.KeepAnchor)
-            user_input = cursor.selectedText()
-            
-            # move to end and add newline
-            cursor.clearSelection()
-            cursor.movePosition(QTextCursor.End)
-            cursor.insertText("\n")
-            self.setTextCursor(cursor)
-            
-            # disable input mode
-            self.waiting_for_input = False
-            self.setReadOnly(True)
-            
-            # queue the input
-            self.input_queue.put(user_input)
-            event.accept()
-            
-        elif event.key() == Qt.Key_Backspace:
-            if cursor.position() <= self.input_start_pos:
-                event.ignore()
-                return
-            super().keyPressEvent(event)
-        else:
-            super().keyPressEvent(event)
-    
-    def get_input(self, timeout=60):
-        """
-        Get input from user with timeout.
-        Blocks while processing Qt events to keep UI responsive.
-        """
-        self.request_input()
-        elapsed = 0
-        
-        while self.input_queue.empty() and elapsed < timeout:
-            QApplication.processEvents()
-            time.sleep(0.01)
-            elapsed += 0.01
-        
-        if self.input_queue.empty():
-            raise TimeoutError("Input timed out")
-        
-        return self.input_queue.get()
-
-
-# ============================================================================
-# INTERPRETER WORKER THREAD
-# ============================================================================
-
-class InterpreterWorker(QThread):
-    """
-    Worker thread for running LOLCODE interpreter without blocking GUI.
-    Handles tokenization, parsing, and execution.
-    """
-    output_ready = pyqtSignal(str, str)  # (text, color)
-    update_tokens = pyqtSignal(list)
-    update_symbols = pyqtSignal(object)
-    finished = pyqtSignal()
-    error_occurred = pyqtSignal(str)
-    
-    def __init__(self, content, console_widget):
-        super().__init__()
-        self.content = content
-        self.console_widget = console_widget
-        self.tokens = None
-        self.symbol_table_obj = None
-        self._is_running = True
-    
-    def console_print(self, *args, **kwargs):
-        """Custom print function that routes to console widget"""
-        text = ' '.join(str(arg) for arg in args)
-        self.output_ready.emit(text, COLORS['TEXT'])
-    
-    def stop(self):
-        """Stop the worker thread"""
-        self._is_running = False
-        self.wait()
-    
-    def run(self):
-        """Execute interpreter pipeline in worker thread"""
-        try:
-            # tokenization
-            self.output_ready.emit("=== LOLCODE INTERPRETER ===", COLORS['INFO'])
-            
-            try:
-                self.tokens = tokenizer.tokenize(self.content)
-            except Exception as e:
-                self.output_ready.emit(f"Tokenization Error: {str(e)}", COLORS['ERROR'])
-                return
-            
-            if not self.tokens:
-                self.output_ready.emit("Error: No tokens generated", COLORS['ERROR'])
-                return
-            
-            self.output_ready.emit(
-                f"Tokenization complete: {len(self.tokens)} tokens", 
-                COLORS['SUCCESS']
-            )
-            self.update_tokens.emit(self.tokens)
-            
-            if not self._is_running:
-                return
-            
-            # parsing
-            try:
-                parser = Parser(self.tokens)
-                ast = parser.parse()
-            except Exception as e:
-                self.output_ready.emit(f"Parser Error: {str(e)}", COLORS['ERROR'])
-                import traceback
-                self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
-                return
-            
-            if hasattr(ast, 'error') and ast.error:
-                error_msg = (ast.error.as_string() if hasattr(ast.error, 'as_string') 
-                           else str(ast.error))
-                self.output_ready.emit(f"Parse Error: {error_msg}", COLORS['ERROR'])
-                return
-            
-            self.output_ready.emit("Parsing complete", COLORS['SUCCESS'])
-            
-            if not self._is_running:
-                return
-            
-            # interpretation
-            try:
-                self.symbol_table_obj = SymbolTable()
-                context = Context('<program>')
-                context.symbol_table = self.symbol_table_obj
-                
-                interpreter = Interpreter()
-                self.output_ready.emit("--- Program Output ---", COLORS['INFO'])
-                
-                # redirect I/O to console
-                original_print = builtins.print
-                original_input = builtins.input
-                
-                builtins.print = self.console_print
-                builtins.input = lambda: self.console_widget.get_input()
-                
-                try:
-                    result = interpreter.visit(ast.node, context)
-                except Exception as e:
-                    self.output_ready.emit(f"Runtime Error: {str(e)}", COLORS['ERROR'])
-                    import traceback
-                    self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
-                    return
-                finally:
-                    builtins.print = original_print
-                    builtins.input = original_input
-                
-                # check for runtime errors
-                if result and hasattr(result, 'error') and result.error:
-                    error_msg = (result.error.as_string() if hasattr(result.error, 'as_string')
-                               else str(result.error))
-                    self.output_ready.emit(error_msg, COLORS['ERROR'])
-                else:
-                    self.output_ready.emit("\n=== Execution complete ===", COLORS['SUCCESS'])
-                
-                # update symbol table
-                if self.symbol_table_obj:
-                    self.update_symbols.emit(self.symbol_table_obj)
-                    
-            except Exception as e:
-                self.output_ready.emit(f"Interpretation Error: {str(e)}", COLORS['ERROR'])
-                import traceback
-                self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
-                return
-            
-        except Exception as e:
-            self.output_ready.emit(f"Unexpected Error: {str(e)}", COLORS['ERROR'])
-            import traceback
-            self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
-        finally:
-            self.finished.emit()
-
-
-# ============================================================================
-# LINE NUMBER WIDGET
-# ============================================================================
-
-class LineNumberArea(QWidget):
-    """Line number display area for code editor"""
-    def __init__(self, editor):
-        super().__init__(editor)
-        self.code_editor = editor
-    
-    def sizeHint(self):
-        return QSize(self.code_editor.line_number_area_width(), 0)
-    
-    def paintEvent(self, event):
-        self.code_editor.line_number_area_paint_event(event)
-
-
-# ============================================================================
-# CODE EDITOR WITH LINE NUMBERS
-# ============================================================================
-
-class CodeEditor(QPlainTextEdit):
-    """Code editor with line numbers and syntax highlighting"""
-    def __init__(self, font_family):
-        super().__init__()
-        self.font_family = font_family
-        self.line_number_area = LineNumberArea(self)
-        
-        # connect signals
-        self.document().blockCountChanged.connect(self.update_line_number_area_width)
-        self.verticalScrollBar().valueChanged.connect(self.update_line_number_area)
-        self.cursorPositionChanged.connect(self.update_line_number_area)
-        self.textChanged.connect(self.update_line_number_area)
-        
-        self.update_line_number_area_width(0)
-    
-    def line_number_area_width(self):
-        """Calculate width needed for line numbers"""
-        digits = len(str(max(1, self.document().blockCount())))
-        return 10 + self.fontMetrics().horizontalAdvance('9') * digits
-    
-    def update_line_number_area_width(self, _):
-        """Update viewport margins for line numbers"""
-        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
-    
-    def update_line_number_area(self):
-        """Trigger repaint of line number area"""
-        rect = self.viewport().rect()
-        self.line_number_area.update(
-            0, rect.y(), 
-            self.line_number_area.width(), 
-            rect.height()
-        )
-    
-    def resizeEvent(self, event):
-        """Handle resize event"""
-        super().resizeEvent(event)
-        cr = self.contentsRect()
-        self.line_number_area.setGeometry(
-            cr.left(), cr.top(),
-            self.line_number_area_width(), cr.height()
-        )
-    
-    def line_number_area_paint_event(self, event):
-        """Paint line numbers"""
-        painter = QPainter(self.line_number_area)
-        painter.fillRect(event.rect(), QColor(COLORS['EDITOR_BG']))
-        
-        block = self.firstVisibleBlock()
-        block_number = block.blockNumber()
-        top = int(self.blockBoundingGeometry(block)
-                 .translated(self.contentOffset()).top())
-        bottom = top + int(self.blockBoundingRect(block).height())
-        
-        font = QFont(self.font_family, 11)
-        painter.setFont(font)
-        
-        while block.isValid() and top <= event.rect().bottom():
-            if block.isVisible() and bottom >= event.rect().top():
-                number = str(block_number + 1)
-                painter.setPen(QColor("#4A4A4A"))
-                painter.drawText(
-                    0, top,
-                    self.line_number_area.width() - 5,
-                    self.fontMetrics().height(),
-                    Qt.AlignmentFlag.AlignRight, number
-                )
-            
-            block = block.next()
-            top = bottom
-            bottom = top + int(self.blockBoundingRect(block).height())
-            block_number += 1
-
-
-# ============================================================================
-# SYNTAX HIGHLIGHTING
-# ============================================================================
-
-def highlight_syntax(text_input):
-    """Apply syntax highlighting to LOLCODE text"""
-    COMMENT_START = "BTW"
-    MULTI_COMMENT_START = "OBTW"
-    MULTI_COMMENT_END = "TLDR"
-    
-    # block signals to prevent recursion
-    text_input.blockSignals(True)
-    
-    cursor = text_input.textCursor()
-    current_pos = cursor.position()
-    
-    # reset all text to default color
-    cursor.select(QTextCursor.Document)
-    default_fmt = QTextCharFormat()
-    default_fmt.setForeground(QColor("#D4D4D4"))
-    cursor.setCharFormat(default_fmt)
-    
-    # highlight comments
-    content = text_input.toPlainText()
-    lines = content.split('\n')
-    char_count = 0
-    inside_multi_comment = False
-    multi_comment_start = 0
-    
-    for line in lines:
-        # handle multiline comments
-        if not inside_multi_comment:
-            start_idx = line.find(MULTI_COMMENT_START)
-            if start_idx != -1:
-                inside_multi_comment = True
-                multi_comment_start = char_count + start_idx
-        
-        if inside_multi_comment:
-            end_idx = line.find(MULTI_COMMENT_END)
-            if end_idx != -1:
-                # highlight from start to end of TLDR
-                multi_comment_end = char_count + end_idx + len(MULTI_COMMENT_END)
-                
-                cursor = text_input.textCursor()
-                cursor.setPosition(multi_comment_start)
-                cursor.setPosition(multi_comment_end, QTextCursor.KeepAnchor)
-                
-                comment_fmt = QTextCharFormat()
-                comment_fmt.setForeground(QColor(COLORS['COMMENT']))
-                cursor.setCharFormat(comment_fmt)
-                
-                inside_multi_comment = False
-            char_count += len(line) + 1
-            continue
-        
-        # handle single-line comments
-        comment_idx = line.find(COMMENT_START)
-        if comment_idx != -1:
-            start_pos = char_count + comment_idx
-            end_pos = char_count + len(line)
-            
-            cursor = text_input.textCursor()
-            cursor.setPosition(start_pos)
-            cursor.setPosition(end_pos, QTextCursor.KeepAnchor)
-            
-            comment_fmt = QTextCharFormat()
-            comment_fmt.setForeground(QColor(COLORS['COMMENT']))
-            cursor.setCharFormat(comment_fmt)
-        
-        char_count += len(line) + 1
-    
-    # highlight keywords (comments will override)
-    for keyword, color in KEYWORD_COLORS.items():
-        index = 0
-        while index < len(content):
-            index = content.find(keyword, index)
-            if index == -1:
-                break
-            
-            # check if keyword is inside a comment
-            line_start = content.rfind('\n', 0, index) + 1
-            line_end = content.find('\n', index)
-            if line_end == -1:
-                line_end = len(content)
-            line_text = content[line_start:line_end]
-            comment_pos = line_text.find(COMMENT_START)
-            
-            # only highlight if not in comment
-            if comment_pos == -1 or (index - line_start) < comment_pos:
-                cursor = text_input.textCursor()
-                cursor.setPosition(index)
-                cursor.setPosition(index + len(keyword), QTextCursor.KeepAnchor)
-                
-                keyword_fmt = QTextCharFormat()
-                keyword_fmt.setForeground(QColor(color))
-                cursor.setCharFormat(keyword_fmt)
-            
-            index += len(keyword)
-    
-    # restore cursor position
-    cursor = text_input.textCursor()
-    cursor.setPosition(current_pos)
-    text_input.setTextCursor(cursor)
-    
-    text_input.blockSignals(False)
-
 
 # ============================================================================
 # TABLE WIDGETS
@@ -553,7 +44,7 @@ def create_table(parent_widget, header1, header2, font_family):
     table = QTableWidget()
     table.setColumnCount(2)
     
-    # set headers
+    # Set headers
     header_item1 = QTableWidgetItem(header1)
     header_item2 = QTableWidgetItem(header2)
     header_item1.setTextAlignment(Qt.AlignCenter)
@@ -561,12 +52,12 @@ def create_table(parent_widget, header1, header2, font_family):
     table.setHorizontalHeaderItem(0, header_item1)
     table.setHorizontalHeaderItem(1, header_item2)
     
-    # configure table behavior
+    # Configure table behavior
     table.horizontalHeader().setStretchLastSection(True)
     table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
     table.setEditTriggers(QTableWidget.NoEditTriggers)
     
-    # apply styling
+    # Apply styling
     table.setStyleSheet(f"""
         QTableWidget {{
             background-color: {COLORS['EDITOR_BG']};
@@ -592,7 +83,7 @@ def create_table(parent_widget, header1, header2, font_family):
         }}
     """)
     
-    # set font
+    # Set font
     font = QFont(font_family, 10)
     table.setFont(font)
     table.horizontalHeader().setFont(font)
@@ -603,87 +94,6 @@ def create_table(parent_widget, header1, header2, font_family):
     return table
 
 
-def update_token_view(table, tokens):
-    """Update token table with lexeme information"""
-    if not tokens:
-        print("Warning: No tokens to display")
-        return
-    
-    table.setRowCount(0)
-    
-    for token in tokens:
-        row_pos = table.rowCount()
-        table.insertRow(row_pos)
-        
-        # handle different token formats
-        if isinstance(token, dict):
-            lexeme = str(token.get('value', ''))
-            category = str(token.get('category', ''))
-        else:
-            # handle token objects with attributes
-            lexeme = str(getattr(token, 'value', ''))
-            category_obj = getattr(token, 'category', '')
-            
-            # convert TokenType enum to string if needed
-            if hasattr(category_obj, 'name'):
-                category = category_obj.name
-            elif hasattr(category_obj, 'value'):
-                category = str(category_obj.value)
-            else:
-                category = str(category_obj)
-        
-        lexeme_item = QTableWidgetItem(lexeme)
-        category_item = QTableWidgetItem(category)
-        lexeme_item.setTextAlignment(Qt.AlignCenter)
-        category_item.setTextAlignment(Qt.AlignCenter)
-        
-        # set font size
-        font = lexeme_item.font()
-        font.setPointSize(9)
-        lexeme_item.setFont(font)
-        category_item.setFont(font)
-        
-        table.setItem(row_pos, 0, lexeme_item)
-        table.setItem(row_pos, 1, category_item)
-
-
-def update_symbol_table(table, symbol_table_obj):
-    """Update symbol table with variable information"""
-    table.setRowCount(0)
-    
-    # type mapping for LOLCODE types
-    type_map = {
-        'Number': lambda v: 'NUMBR' if isinstance(v.value, int) else 'NUMBAR',
-        'String': lambda v: 'YARN',
-        'Boolean': lambda v: 'TROOF',
-        'Noob': lambda v: 'NOOB',
-        'Function': lambda v: 'FUNCTION'
-    }
-    
-    if symbol_table_obj and symbol_table_obj.symbols:
-        for var_name, value in symbol_table_obj.symbols.items():
-            row_pos = table.rowCount()
-            table.insertRow(row_pos)
-            
-            type_name = type(value).__name__
-            lolcode_type = type_map.get(type_name, lambda v: 'UNKNOWN')(value)
-            display_value = f"{value} ({lolcode_type})"
-            
-            name_item = QTableWidgetItem(var_name)
-            value_item = QTableWidgetItem(display_value)
-            name_item.setTextAlignment(Qt.AlignCenter)
-            value_item.setTextAlignment(Qt.AlignCenter)
-            
-            # set font size
-            font = name_item.font()
-            font.setPointSize(9)
-            name_item.setFont(font)
-            value_item.setFont(font)
-            
-            table.setItem(row_pos, 0, name_item)
-            table.setItem(row_pos, 1, value_item)
-
-
 # ============================================================================
 # FILE OPERATIONS
 # ============================================================================
@@ -691,8 +101,12 @@ def update_symbol_table(table, symbol_table_obj):
 def save_file(text_input, file_manager, parent_widget):
     """Save file to disk"""
     if file_manager.file_name is None:
-        file_name, ok = QInputDialog.getText(parent_widget, 'Save File', 'Enter file name:')
-
+        file_name, ok = QInputDialog.getText(
+            parent_widget, 
+            'Save File', 
+            'Enter file name:'
+        )
+        
         if ok and file_name:
             if not file_name.endswith('.txt'):
                 file_name += '.txt'
@@ -750,7 +164,7 @@ def save_current_tab(tab_widget, parent_window):
     
     save_and_store(text_input, file_manager, content_manager, parent_window)
     
-    # update tab title
+    # Update tab title
     if file_manager.file_name:
         tab_name = os.path.basename(file_manager.file_name)
         tab_widget.setTabText(current_idx, tab_name)
@@ -769,27 +183,27 @@ def create_text_editor(parent_widget, file_manager, content_manager,
         f"background-color: {COLORS['EDITOR_BG']}; border: none;"
     )
     
-    # create code editor
+    # Create code editor
     text_input = CodeEditor(font_family)
     text_input.setPlaceholderText("Type your LOLCODE here...")
     
-    # set font
+    # Set font
     font = QFont(font_family, 11)
     text_input.setFont(font)
     text_input.setStyleSheet(f"border: none; color: {COLORS['TEXT']};")
     
     layout.addWidget(text_input)
     
-    # setup keyboard shortcuts
-    setup_editor_shortcuts(text_input, parent_window, tab_widget=None, font_family=font_family)
+    # Setup keyboard shortcuts
+    setup_editor_shortcuts(text_input, parent_window, font_family)
     
-    # syntax highlighting
+    # Enable syntax highlighting
     text_input.textChanged.connect(lambda: highlight_syntax(text_input))
     
     return text_input
 
 
-def setup_editor_shortcuts(text_input, parent_window, tab_widget, font_family):
+def setup_editor_shortcuts(text_input, parent_window, font_family):
     """Setup all keyboard shortcuts for the editor"""
     # Zoom shortcuts
     zoom_in_shortcut = QShortcut(QKeySequence.ZoomIn, text_input)
@@ -808,7 +222,7 @@ def setup_editor_shortcuts(text_input, parent_window, tab_widget, font_family):
         lambda: reset_zoom(text_input, 11, font_family)
     )
     
-    # Standard shortcuts 
+    # Standard shortcuts
     copy_shortcut = QShortcut(QKeySequence.Copy, text_input)
     copy_shortcut.activated.connect(text_input.copy)
     
@@ -828,23 +242,15 @@ def setup_editor_shortcuts(text_input, parent_window, tab_widget, font_family):
     select_all_shortcut.activated.connect(text_input.selectAll)
 
 
-def reset_zoom(text_input, default_size, font_family):
-    """Reset editor zoom to default size"""
-    font = QFont(font_family, default_size)
-    text_input.setFont(font)
-
-
 def create_new_tab(tab_widget, parent_window, font_family, file_name=None, content=None):
     """Create a new tab in the tab widget"""
-    # create managers
+    # Create managers
     file_manager = FileManager()
     content_manager = TextContentManager()
     
-    # create editor widget
+    # Create editor widget
     text_editor = QWidget()
-    text_editor.setStyleSheet(
-        f"background-color: {COLORS['EDITOR_BG']}; border: none; padding: 20px;"
-    )
+    text_editor.setStyleSheet(f"background-color: {COLORS['EDITOR_BG']}; border: none; padding: 20px;")
     
     # Create text input
     text_input = create_text_editor(
@@ -864,14 +270,12 @@ def create_new_tab(tab_widget, parent_window, font_family, file_name=None, conte
     text_editor.setProperty("content_manager", content_manager)
     text_editor.setProperty("text_input", text_input)
     
-    # add tab
+    # Add tab
     tab_name = os.path.basename(file_name) if file_name else "Untitled"
     idx = tab_widget.addTab(text_editor, tab_name)
     
-    # create close button
-
-    # check if not mac to add close button
-    if IS_MACOS != -1:
+    # Create close button
+    if IS_MACOS != 1:
         close_btn = QPushButton()
         close_btn.setIcon(QIcon(str(BASE_DIR / 'src/assets/x.png')))
         close_btn.setIconSize(QSize(16, 16))
@@ -925,7 +329,7 @@ def execute_code(tab_widget, lexeme_manager, token_table,
     
     # Stop any existing workers
     if hasattr(tab_widget, 'workers'):
-        for worker in tab_widget.workers[:]:  # Copy list to avoid modification during iteration
+        for worker in tab_widget.workers[:]:
             if worker.isRunning():
                 worker.stop()
                 tab_widget.workers.remove(worker)
@@ -959,7 +363,6 @@ def execute_code(tab_widget, lexeme_manager, token_table,
             console_widget.write("=== Interpreter Finished ===", COLORS['SUCCESS'])
         except:
             pass
-        # Clean up worker reference
         if hasattr(tab_widget, 'workers') and worker in tab_widget.workers:
             tab_widget.workers.remove(worker)
     
@@ -968,7 +371,7 @@ def execute_code(tab_widget, lexeme_manager, token_table,
     worker.update_symbols.connect(safe_update_symbols)
     worker.finished.connect(on_finished)
     
-    # Store worker to prevent garbage collection
+    # Store worker
     if not hasattr(tab_widget, 'workers'):
         tab_widget.workers = []
     tab_widget.workers.append(worker)
@@ -1061,18 +464,15 @@ def create_main_layout(window, font_family, monospace_font):
     # ========== TAB WIDGET ==========
     tab_widget = QTabWidget()
     tab_widget.setTabsClosable(True)
-    tab_widget.setDocumentMode(True)
     tab_widget.setMovable(True)
     tab_widget.setFont(QFont(font_family, 9))
-    
+
     # customize tab bar
     tab_bar = tab_widget.tabBar()
     tab_bar.setExpanding(False)
     tab_bar.setLayoutDirection(Qt.LeftToRight)
 
-    
     tab_widget.setStyleSheet(f"""
-         
         QTabWidget::pane {{
             border: none;
             background-color: {COLORS['EDITOR_BG']};
@@ -1172,15 +572,13 @@ def create_main_layout(window, font_family, monospace_font):
     setup_global_shortcuts(window, tab_widget, lexeme_manager, 
                           token_table, symbol_table, console, monospace_font)
     
-    # create initial tab
+    # Create initial tab
     create_new_tab(tab_widget, window, monospace_font)
 
 
-def setup_global_shortcuts(window, tab_widget, lexeme_manager, 
-                          token_table, symbol_table, console, font_family):
+def setup_global_shortcuts(window, tab_widget, lexeme_manager, token_table, symbol_table, console, font_family):
     """Setup application-wide keyboard shortcuts"""
     shortcuts = {
-        # File operations
         'Ctrl+N': lambda: create_new_tab(tab_widget, window, font_family),
         'Ctrl+O': lambda: open_file(tab_widget, window, font_family),
         'Ctrl+S': lambda: save_current_tab(tab_widget, window),
@@ -1211,98 +609,107 @@ def setup_global_shortcuts(window, tab_widget, lexeme_manager,
 
 def main():
     """Main application entry point"""
-    
-    app = QApplication(sys.argv)
-    window = QMainWindow()
-        
-    # Set window properties
     try:
-        icon_path = BASE_DIR / 'src/assets/lolcode.png'
-        if icon_path.exists():
-            app.setWindowIcon(QIcon(str(icon_path)))
-    except Exception as e:
-        print(f"Warning: Could not load icon: {e}")
-    
-    window.setGeometry(100, 100, 1200, 800)
-    window.setWindowTitle("WeLove124 - LOLCODE IDE")
-    
-    # Load custom fonts
-    font_id = QFontDatabase.addApplicationFont(str(BASE_DIR / "src/assets/font/inter.ttf"))
-    mono_font_id = QFontDatabase.addApplicationFont(str(BASE_DIR / "src/assets/font/Consolas.ttf"))
-    
-    if font_id != -1:
-        font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
-    else:
-        print("ERROR: Could not load Inter font, using default")
-        font_family = "Arial"
-    
-    if mono_font_id != -1:
-        mono_font_family = QFontDatabase.applicationFontFamilies(mono_font_id)[0]
-    else:
-        print("ERROR: Could not load Consolas font, using default monospace")
-        mono_font_family = "Courier New"
- 
-    # Apply global stylesheet
-    window.setStyleSheet(f"""
-        QMainWindow {{
-            background-color: {COLORS['BACKGROUND']};
-            color: {COLORS['TEXT']};
-        }}
-        QScrollBar:vertical {{
-            background-color: {COLORS['EDITOR_BG']};
-            width: 14px;
-            border: none;
-        }}
-        QScrollBar::handle:vertical {{
-            background-color: #424242;
-            min-height: 30px;
-            border-radius: 7px;
-            margin: 2px;
-        }}
-        QScrollBar::handle:vertical:hover {{
-            background-color: #4F4F4F;
-        }}
-        QScrollBar::handle:vertical:pressed {{
-            background-color: #565656;
-        }}
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-            height: 0px;
-        }}
-        QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-            background: none;
-        }}
-        QScrollBar:horizontal {{
-            background-color: {COLORS['EDITOR_BG']};
-            height: 14px;
-            border: none;
-        }}
-        QScrollBar::handle:horizontal {{
-            background-color: #424242;
-            min-width: 30px;
-            border-radius: 7px;
-            margin: 2px;
-        }}
-        QScrollBar::handle:horizontal:hover {{
-            background-color: #4F4F4F;
-        }}
-        QScrollBar::handle:horizontal:pressed {{
-            background-color: #565656;
-        }}
-        QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
-            width: 0px;
-        }}
-        QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
-            background: none;
-        }}
-    """)
-    
-    # Create main layout
-    create_main_layout(window, font_family, mono_font_family)
-    
-    # Show window
-    window.show()
-    
-    sys.exit(app.exec_())
+        app = QApplication(sys.argv)
+        window = QMainWindow()
         
+        # Set window properties
+        try:
+            icon_path = BASE_DIR / 'src/assets/lolcode.png'
+            if icon_path.exists():
+                app.setWindowIcon(QIcon(str(icon_path)))
+        except Exception as e:
+            print(f"Warning: Could not load icon: {e}")
+        
+        window.setGeometry(100, 100, 1200, 800)
+        window.setWindowTitle("WeLove124 - LOLCODE IDE")
+        
+        # Load custom fonts
+        try:
+            font_id = QFontDatabase.addApplicationFont(str(BASE_DIR / "src/assets/font/inter.ttf"))
+            mono_font_id = QFontDatabase.addApplicationFont(str(BASE_DIR / "src/assets/font/Consolas.ttf"))
+            
+            if font_id != -1:
+                font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
+            else:
+                print("Warning: Could not load Inter font, using default")
+                font_family = "Arial"
+            
+            if mono_font_id != -1:
+                mono_font_family = QFontDatabase.applicationFontFamilies(mono_font_id)[0]
+            else:
+                print("Warning: Could not load Consolas font, using default monospace")
+                mono_font_family = "Courier New"
+        except Exception as e:
+            print(f"Warning: Font loading error: {e}")
+            font_family = "Arial"
+            mono_font_family = "Courier New"
+        
+        # Apply global stylesheet
+        window.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {COLORS['BACKGROUND']};
+                color: {COLORS['TEXT']};
+            }}
+            QScrollBar:vertical {{
+                background-color: {COLORS['EDITOR_BG']};
+                width: 14px;
+                border: none;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: #424242;
+                min-height: 30px;
+                border-radius: 7px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: #4F4F4F;
+            }}
+            QScrollBar::handle:vertical:pressed {{
+                background-color: #565656;
+            }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+                height: 0px;
+            }}
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+                background: none;
+            }}
+            QScrollBar:horizontal {{
+                background-color: {COLORS['EDITOR_BG']};
+                height: 14px;
+                border: none;
+            }}
+            QScrollBar::handle:horizontal {{
+                background-color: #424242;
+                min-width: 30px;
+                border-radius: 7px;
+                margin: 2px;
+            }}
+            QScrollBar::handle:horizontal:hover {{ background-color: #4F4F4F; }}
+            QScrollBar::handle:horizontal:pressed {{background-color: #565656;}}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{width: 0px;}}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none }}
+        """)
+        
+        # Create main layout
+        try:
+            create_main_layout(window, font_family, mono_font_family)
+        except Exception as e:
+            print(f"Error creating main layout: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        
+        # Show window
+        window.show()
+        
+        sys.exit(app.exec_())
+        
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
 if __name__ == '__main__':
     main()
