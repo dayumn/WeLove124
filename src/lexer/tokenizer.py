@@ -67,12 +67,20 @@ class TokenType(Enum):
     MKAY = "MKAY"
     AN = "AN"
     
+    # Array keywords
+    OF = "OF"
+    CONFINE = "CONFINE"
+    DISCHARGE = "DISCHARGE"
+    IN = "IN"
+    AT = "AT"
+    
     # Types
     NOOB = "NOOB"
     NUMBR = "NUMBR"
     NUMBAR = "NUMBAR"
     YARN = "YARN"
     TROOF = "TROOF"
+    UHS = "UHS"
     
     # Literals
     WIN = "WIN"
@@ -91,6 +99,8 @@ class TokenType(Enum):
     QUOTE = "QUOTE"
     PLUS = "PLUS"
     MEBBE = "MEBBE"
+    LBRACKET = "LBRACKET"
+    RBRACKET = "RBRACKET"
 
 # Token specification with patterns
 TOKEN_SPEC = [
@@ -123,47 +133,56 @@ TOKEN_SPEC = [
     (TokenType.FOUND_YR, r'FOUND\s+YR'),
     (TokenType.I_IZ, r'I\s+IZ'),
     
+    # Array keywords (single-word patterns)
+    (TokenType.CONFINE, r'\bCONFINE\b'),
+    (TokenType.DISCHARGE, r'\bDISCHARGE\b'),
+    
     # Single word keywords
     (TokenType.O_RLY, r'O\s+RLY\?'),
     (TokenType.YA_RLY, r'YA\s+RLY'),
     (TokenType.NO_WAI, r'NO\s+WAI'),
     (TokenType.WTF, r'WTF\?'),
-    (TokenType.HAI, r'HAI'),
-    (TokenType.KTHXBYE, r'KTHXBYE'),
-    (TokenType.WAZZUP, r'WAZZUP'),
-    (TokenType.BUHBYE, r'BUHBYE'),
-    (TokenType.ITZ, r'ITZ'),
-    (TokenType.R, r'R'),
-    (TokenType.NOT, r'NOT'),
-    (TokenType.DIFFRINT, r'DIFFRINT'),
-    (TokenType.SMOOSH, r'SMOOSH'),
-    (TokenType.MAEK, r'MAEK'),
-    (TokenType.AN, r'AN'),
-    (TokenType.A, r'A'),
-    (TokenType.VISIBLE, r'VISIBLE'),
-    (TokenType.GIMMEH, r'GIMMEH'),
-    (TokenType.OIC, r'OIC'),
-    (TokenType.OMGWTF, r'OMGWTF'),
-    (TokenType.OMG, r'OMG'),
-    (TokenType.UPPIN, r'UPPIN'),
-    (TokenType.NERFIN, r'NERFIN'),
-    (TokenType.YR, r'YR'),
-    (TokenType.TIL, r'TIL'),
-    (TokenType.WILE, r'WILE'),
-    (TokenType.GTFO, r'GTFO'),
-    (TokenType.MKAY, r'MKAY'),
-    (TokenType.MEBBE, r'MEBBE'),
+    (TokenType.HAI, r'\bHAI\b'),
+    (TokenType.KTHXBYE, r'\bKTHXBYE\b'),
+    (TokenType.WAZZUP, r'\bWAZZUP\b'),
+    (TokenType.BUHBYE, r'\bBUHBYE\b'),
+    (TokenType.ITZ, r'\bITZ\b'),
+    (TokenType.R, r'\bR\b'),
+    (TokenType.NOT, r'\bNOT\b'),
+    (TokenType.DIFFRINT, r'\bDIFFRINT\b'),
+    (TokenType.SMOOSH, r'\bSMOOSH\b'),
+    (TokenType.MAEK, r'\bMAEK\b'),
+    (TokenType.AN, r'\bAN\b'),
+    (TokenType.AT, r'\bAT\b'),
+    (TokenType.A, r'\bA\b'),
+    (TokenType.VISIBLE, r'\bVISIBLE\b'),
+    (TokenType.GIMMEH, r'\bGIMMEH\b'),
+    (TokenType.OIC, r'\bOIC\b'),
+    (TokenType.OMGWTF, r'\bOMGWTF\b'),
+    (TokenType.OMG, r'\bOMG\b'),
+    (TokenType.UPPIN, r'\bUPPIN\b'),
+    (TokenType.NERFIN, r'\bNERFIN\b'),
+    (TokenType.YR, r'\bYR\b'),
+    (TokenType.TIL, r'\bTIL\b'),
+    (TokenType.WILE, r'\bWILE\b'),
+    (TokenType.GTFO, r'\bGTFO\b'),
+    (TokenType.MKAY, r'\bMKAY\b'),
+    (TokenType.MEBBE, r'\bMEBBE\b'),
+    (TokenType.OF, r'\bOF\b'),
+    (TokenType.IN, r'\bIN\b'),
+    (TokenType.AT, r'\bAT\b'),
     
     # Type keywords
-    (TokenType.NOOB, r'NOOB'),
-    (TokenType.NUMBR, r'NUMBR'),
-    (TokenType.NUMBAR, r'NUMBAR'),
-    (TokenType.YARN, r'YARN'),
-    (TokenType.TROOF, r'TROOF'),
+    (TokenType.NOOB, r'\bNOOB\b'),
+    (TokenType.NUMBR, r'\bNUMBR\b'),
+    (TokenType.NUMBAR, r'\bNUMBAR\b'),
+    (TokenType.YARN, r'\bYARN\b'),
+    (TokenType.TROOF, r'\bTROOF\b'),
+    (TokenType.UHS, r'\bUHS\b'),
     
     # Boolean literals
-    (TokenType.WIN, r'WIN'),
-    (TokenType.FAIL, r'FAIL'),
+    (TokenType.WIN, r'\bWIN\b'),
+    (TokenType.FAIL, r'\bFAIL\b'),
     
     # Literals
     (TokenType.FLOAT, r'-?\d+\.\d+'),
@@ -172,8 +191,9 @@ TOKEN_SPEC = [
     
     # Identifiers
     (TokenType.IDENTIFIER, r'[a-zA-Z_][a-zA-Z0-9_]*'),
-    
     # Special characters
+    (TokenType.LBRACKET, r'\['),
+    (TokenType.RBRACKET, r'\]'),
     (TokenType.ELLIPSIS, r'(\.\.\.|…)'),  # Three periods or unicode ellipsis (U+2026)
     (TokenType.COMMA, r','),
     (TokenType.EXCLAMATION, r'!'),
@@ -219,6 +239,16 @@ CATEGORY_MAP = { # TokenType: Category Name
     TokenType.NUMBAR: "Type Literal",
     TokenType.YARN: "Type Literal",
     TokenType.TROOF: "Type Literal",
+    TokenType.UHS: "Type Literal (Array)",
+
+    # --- Array Operations ---
+    TokenType.CONFINE: "Array Operation Keyword",
+    TokenType.DISCHARGE: "Array Operation Keyword",
+    TokenType.OF: "Array Declaration Helper",
+    TokenType.IN: "Array Operation Helper",
+    TokenType.AT: "Array Index Helper",
+    TokenType.LBRACKET: "Array Index Delimiter",
+    TokenType.RBRACKET: "Array Index Delimiter",
 
     # --- Flow Control ---
     TokenType.GTFO: "Flow Control (Break)",
