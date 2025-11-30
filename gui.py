@@ -320,7 +320,8 @@ class CodeEditor(QPlainTextEdit): # Actual code editor with line numbers
 def reset_zoom(text_input, default_size, global_font):
     inter_font =  QFont(global_font, default_size)
     text_input.setFont(inter_font)
-    text_input.setFont(global_font)
+    
+
 
 
 

@@ -11,7 +11,7 @@ HAI
 	VISIBLE "0. Exit"
 
 	VISIBLE "Choice: "
-	GIMMEH choice
+	GIMMEH 
 
 	BOTH SAEM choice AN 1
 	O RLY?
@@ -38,7 +38,7 @@ HAI
 			VISIBLE "Invalid Input!"
 	OIC
 
-	DIFFRINT BIGGR OF 3 AN choice AN 3
+	DIFFRINT BIGGR OF 3 AN choice ANzzx 3
 	O RLY?
 		YA RLY
 			VISIBLE "Invalid input is > 3."
