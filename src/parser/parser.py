@@ -369,6 +369,7 @@ class Parser:
     self.tokens = tokens
     self.token_index = -1
     self.parse_stack = []  # Stack to track parsing context
+    self.control_flow_stack = []  # Stack to track control flow contexts (switch/loop/function) for GTFO validation
     self.filename = filename
     self.advance()
   
@@ -387,6 +388,25 @@ class Parser:
     """Pop the most recent parsing context"""
     if self.parse_stack:
       self.parse_stack.pop()
+
+  def push_control_flow(self, context_type):
+    """Push a control flow context (switch/loop/function) for GTFO validation"""
+    self.control_flow_stack.append(context_type)
+  
+  def pop_control_flow(self):
+    """Pop the most recent control flow context"""
+    if self.control_flow_stack:
+      self.control_flow_stack.pop()
+  
+  def is_in_valid_gtfo_context(self):
+    """Check if GTFO can be used in current context (must be inside switch/loop/function)"""
+    return len(self.control_flow_stack) > 0
+  
+  def get_current_control_flow_context(self):
+    """Get the current control flow context name for error messages"""
+    if self.control_flow_stack:
+      return self.control_flow_stack[-1]
+    return None
 
   # Standardized error factory
   def syntax_error(self, start_token, expected, found=None, category=None, context_kind=None, failing_token=None):
@@ -728,6 +748,14 @@ class Parser:
     res = ParseResult()
     # Grammar: <nestable_expr> ::= <arithmetic_expr> | <boolean_nest> | <comparison> | <function_call> | <typecasting> | <literal> | <relational> | varident
 
+    # Check for invalid infinite arity operators
+    if self.current_token['type'] in (TokenType.ALL_OF, TokenType.ANY_OF):
+      return res.failure(InvalidSyntaxError(
+        self.current_token,
+        f"Nesting infinite arity boolean operators (ALL OF/ANY OF) is not allowed",
+        category='Boolean Multi-Operand'
+      ))
+
     # Try arithmetic expressions
     if self.current_token['type'] in (TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, TokenType.DIFF_OF, TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF):
       res.node = res.register(self.arithmetic_binary_operation())
@@ -949,6 +977,7 @@ class Parser:
       if res.error:
         self.pop_context()
         return res
+      
       boolean_statements.append(first_operand)
 
       # Expect AN
@@ -989,6 +1018,7 @@ class Parser:
 
       expr = res.register(self.nestable_expr())
       if res.error: return res
+      
       expressions.append(expr)
 
     return res.success(expressions)
@@ -1298,12 +1328,22 @@ class Parser:
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
-  # TODO: GTFO
   def break_statement(self):
     self.push_context('break_statement', 'GTFO')
     res = ParseResult()
 
     if self.current_token['type'] == TokenType.GTFO:
+      # Validate that GTFO is used in valid context (switch/loop/function)
+      if not self.is_in_valid_gtfo_context():
+        self.pop_context()
+        return res.failure(self.syntax_error(
+          self.current_token,
+          'GTFO inside switch (WTF), loop (IM IN YR), or function (HOW IZ I)',
+          'GTFO outside valid context',
+          category='Break Statement',
+          context_kind='break'
+        ))
+      
       break_token = self.current_token
       self.advance() # Eat GTFO
 
@@ -1429,6 +1469,7 @@ class Parser:
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def switch_case_statement(self):
     self.push_context('switch_case_statement', 'WTF? ... OIC')
+    self.push_control_flow('switch')  # Track that we're inside a switch for GTFO validation
     res = ParseResult()
     cases = []
     cases_statements = []
@@ -1444,6 +1485,7 @@ class Parser:
 
       # Error
       if self.current_token['type'] != TokenType.OMG:
+        self.pop_control_flow()  # Exit switch context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'OMG', self.current_token['value'], category='Switch Start', context_kind='switch'))
 
@@ -1453,10 +1495,11 @@ class Parser:
         # Eat OMG
         self.advance()
 
-        # Error
-        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
+        # Error - OMG must be followed by a literal value only (not expressions)
+        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.NOOB):
+          self.pop_control_flow()  # Exit switch context on error
           self.pop_context()
-          return res.failure(self.syntax_error(self.current_token, 'literal', self.current_token['value'], category='Switch Case', context_kind='switch'))
+          return res.failure(self.syntax_error(self.current_token, 'literal (INTEGER, FLOAT, STRING, WIN, FAIL, or NOOB)', self.current_token['value'], category='Switch Case', context_kind='switch'))
 
         # Eat
         case_condition = res.register(self.literal())
@@ -1491,6 +1534,7 @@ class Parser:
       # Loop end
 
       if self.current_token['type'] != TokenType.OMGWTF:
+        self.pop_control_flow()  # Exit switch context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'OMGWTF', self.current_token['value'], category='Switch Default', context_kind='switch'))
 
@@ -1509,6 +1553,7 @@ class Parser:
 
         # Has error
         if statement is None:
+          self.pop_control_flow()  # Exit switch context on error
           self.pop_context()
           return res
 
@@ -1520,21 +1565,25 @@ class Parser:
           self.advance()
 
       if self.current_token['type'] != TokenType.OIC:
+        self.pop_control_flow()  # Exit switch context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'OIC', self.current_token['value'], category='Switch Terminator', context_kind='switch'))
 
       # Eat OIC
       self.advance()
 
+      self.pop_control_flow()  # Exit switch context
       self.pop_context()
       return res.success(SwitchCaseNode(cases, cases_statements, default_case_statements))
 
+    self.pop_control_flow()  # Exit switch context on early return
     self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def loop_statement(self):
     self.push_context('loop_statement', 'IM IN YR ... IM OUTTA YR')
+    self.push_control_flow('loop')  # Track that we're inside a loop for GTFO validation
     res = ParseResult()
     label = None
     operation = None
@@ -1547,6 +1596,7 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.IDENTIFIER:
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'loop label IDENTIFIER', self.current_token['value'], category='Loop Start', context_kind='loop'))
 
@@ -1555,6 +1605,7 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] not in (TokenType.UPPIN, TokenType.NERFIN):
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, ['UPPIN','NERFIN'], self.current_token['value'], category='Loop Operation', context_kind='loop'))
 
@@ -1565,6 +1616,7 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.YR:
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Loop Clause', context_kind='loop'))
 
@@ -1574,6 +1626,7 @@ class Parser:
 
       # Var
       if self.current_token['type'] != TokenType.IDENTIFIER:
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'loop variable IDENTIFIER', self.current_token['value'], category='Loop Variable', context_kind='loop'))
 
@@ -1619,6 +1672,7 @@ class Parser:
 
       # Loop out
       if self.current_token['type'] != TokenType.IM_OUTTA_YR:
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'IM OUTTA YR', self.current_token['value'], category='Loop Terminator', context_kind='loop'))
 
@@ -1626,6 +1680,7 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.IDENTIFIER:
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'loop exit label IDENTIFIER', self.current_token['value'], category='Loop Terminator', context_kind='loop'))
 
@@ -1636,19 +1691,23 @@ class Parser:
 
       # print(label, out_label)
       if label != out_label:
+        self.pop_control_flow()  # Exit loop context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, label, out_label, category='Loop Terminator', context_kind='loop'))
 
 
+      self.pop_control_flow()  # Exit loop context
       self.pop_context()
       return res.success(LoopNode(label, operation, variable, clause_type, til_wile_expression, body_statements))
 
+    self.pop_control_flow()  # Exit loop context on early return
     self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def function_definition(self):
     self.push_context('function_definition', 'HOW IZ I ... IF U SAY SO')
+    self.push_control_flow('function')  # Track that we're inside a function for GTFO validation
     res = ParseResult()
     function_name = None
     parameters = []
@@ -1660,6 +1719,7 @@ class Parser:
 
       # Identifier
       if self.current_token['type'] != TokenType.IDENTIFIER:
+        self.pop_control_flow()  # Exit function context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'function name IDENTIFIER', self.current_token['value'], category='Function Definition', context_kind='function_def'))
 
@@ -1673,7 +1733,9 @@ class Parser:
         self.advance()
 
         first_param = res.register(self.expression())
-        if first_param is None: return res # Has error
+        if first_param is None:
+          self.pop_control_flow()  # Exit function context on error
+          return res # Has error
 
         parameters.append(first_param)
 
@@ -1684,6 +1746,7 @@ class Parser:
 
           # Expect YR
           if self.current_token['type'] != TokenType.YR:
+            self.pop_control_flow()  # Exit function context on error
             self.pop_context()
             return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Function Parameters', context_kind='function_def'))
 
@@ -1691,6 +1754,7 @@ class Parser:
 
           additional_param = res.register(self.expression())
           if additional_param is None:
+            self.pop_control_flow()  # Exit function context on error
             self.pop_context()
             return res # Has error
 
@@ -1706,6 +1770,7 @@ class Parser:
         
         statement = res.register(self.statement())
         if statement is None:
+          self.pop_control_flow()  # Exit function context on error
           self.pop_context()
           return res # Has error
 
@@ -1722,6 +1787,7 @@ class Parser:
 
         return_expression  = res.register(self.expression())
         if return_expression is None:
+          self.pop_control_flow()  # Exit function context on error
           self.pop_context()
           return res # Has error
 
@@ -1732,15 +1798,18 @@ class Parser:
         self.advance()
 
       if self.current_token['type'] != TokenType.IF_U_SAY_SO:
+        self.pop_control_flow()  # Exit function context on error
         self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'IF U SAY SO', self.current_token['value'], category='Function Terminator', context_kind='function_def'))
 
       # Eat IF U SAY SO
       self.advance()
 
+      self.pop_control_flow()  # Exit function context
       self.pop_context()
       return res.success(FuncDefNode(function_name, parameters, body_statements))
 
+    self.pop_control_flow()  # Exit function context on early return
     self.pop_context()
     return res
 

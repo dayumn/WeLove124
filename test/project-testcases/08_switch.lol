@@ -7,7 +7,7 @@ HAI
 	BTW if w/o MEBBE, 1 only, everything else is invalid
 	VISIBLE "1. Compute age"
 	VISIBLE "2. Compute tip"
-	VISIBLE "3. Compute square ar	ea"
+	VISIBLE "3. Compute square :>area"
 	VISIBLE "0. Exit"
 
 	VISIBLE "Choice: "

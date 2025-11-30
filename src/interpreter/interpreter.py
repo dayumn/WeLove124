@@ -171,14 +171,12 @@ class Interpreter:
       operand_value = res.register(self.visit(operand, context))
       if res.error: return res
 
-      # Perform typecasting
-      # Old
-      # operand_value, error = operand_value.typecast(String)
-      # if error:
-      #   res.error = error
-      #   return res
+      # Perform implicit typecasting to String
+      operand_value, error = operand_value.typecast(String)
+      if error:
+        return res.failure(error)
 
-      string_value += str(operand_value.value)
+      string_value += operand_value.value
     
     return res.success(String(string_value))
 
@@ -368,6 +366,14 @@ class Interpreter:
     
     # Get the variable name from the token
     var_name = variable['value']
+    
+    # Validate that the loop variable exists before starting the loop
+    if not context.symbol_table.exists(var_name):
+      return res.failure(RuntimeError(
+        variable,
+        f"Loop variable '{var_name}' must be declared before the loop",
+        context
+      ))
 
     # Proceed to the loop
     is_running = True
