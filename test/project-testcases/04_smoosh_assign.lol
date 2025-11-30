@@ -1,29 +1,33 @@
+BTW start of the program
 HAI
     WAZZUP
         BTW variable dec
-        I HAS A x
-        I HAS A y
+        I HAS A monde
+        I HAS A num ITZ 17
+        I HAS A name ITZ "seventeen"
+        I HAS A fnum ITZ 17.0
+        I HAS A flag ITZ WIN
+        
+        I HAS A sum ITZ SUM OF num AN 13
+        I HAS A diff ITZ DIFF OF sum AN 17
+        I HAS A prod ITZ PRODUKT OF 3 AN 4
+        I HAS A quo ITZ QUOSHUNT OF 4 AN 5
     BUHBYE
-    
-    VISIBLE "Hello! Please enter two strings::"
-    VISIBLE "String 1:: "
-    GIMMEH x
-    VISIBLE "String 2:: "
-    GIMMEH y
 
-    VISIBLE SMOOSH x AN y
+    BTW print literals and variables
+    VISIBLE "declarations"
+    VISIBLE monde BTW should be NOOB
+    VISIBLE num
+    VISIBLE name
+    VISIBLE fnum
+    VISIBLE flag
 
-    VISIBLE SMOOSH x AN x AN x AN y AN y
+    VISIBLE sum
+    VISIBLE diff
+    VISIBLE prod
+    VISIBLE quo
 
-    x R SMOOSH x AN y
-    y R 100
-    VISIBLE x AN 52615 AN y AN MOD OF 10 AN 6 AN "End!"
-
-    VISIBLE 10 AN y
-    y IS NOW A NUMBAR
-    VISIBLE 10 AN y
-
-    y R 0
-    y R MAEK A y TROOF
-    VISIBLE y
+    BTW print expressions
+    VISIBLE SUM OF PRODUKT OF 2.2 AN 5 AN BIGGR OF DIFF OF 17 AN 2 AN 5
+    VISIBLE BIGGR OF PRODUKT OF 30 AN 2 AN QUOSHUNT OF SUM OF 3 AN 5 AN 2
 KTHXBYE

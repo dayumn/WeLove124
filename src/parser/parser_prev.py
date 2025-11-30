@@ -291,13 +291,12 @@ class InvalidSyntaxError(Error):
     base_cat = self.category or (self.start_token.get('category') if isinstance(self.start_token, dict) else None) or (self.start_token.get('type').value if isinstance(self.start_token, dict) else 'UNKNOWN')
     lexeme = self.start_token['value'] if isinstance(self.start_token, dict) else '<UNKNOWN>'
     line = self.start_token['line'] if isinstance(self.start_token, dict) else 0
-    col = self.start_token.get('col', 0) if isinstance(self.start_token, dict) else 0
     
     # Get filename from parse_stack or use <stdin> as fallback
     filename = self.parse_stack[0]['filename'] if self.parse_stack else '<stdin>'
     
-    # Format: File "line X:col Y", SyntaxError: message
-    msg = f'  File "{filename}", line {line}:{col}\n'
+    # Format: File "line X", SyntaxError: message
+    msg = f'  File "{filename}", line {line}\n'
     msg += f'SyntaxError: '
     
     # Build error message
@@ -316,14 +315,12 @@ class InvalidSyntaxError(Error):
     else:
       msg += f"invalid syntax near '{lexeme}'"
     
-    # Add parsing context as traceback
+    # for parsing context as traceback
     if self.parse_stack:
       traceback = "Traceback (most recent call last):\n"
       for ctx in self.parse_stack:
         ctx_filename = ctx.get('filename', '<stdin>')
-        ctx_line = ctx.get('line', 0)
-        ctx_col = ctx['token'].get('col', 0) if isinstance(ctx.get('token'), dict) else 0
-        traceback += f'  File "{ctx_filename}", line {ctx_line}:{ctx_col}, in {ctx["function"]}\n'
+        traceback += f'  File "{ctx_filename}", line {ctx["line"]}, in {ctx["function"]}\n'
       msg = traceback + msg
     
     return msg + "\n"
@@ -331,20 +328,6 @@ class InvalidSyntaxError(Error):
 class RuntimeError(Error):
   def __init__(self, token, details):
     super().__init__(token, details, error_name='Runtime Error')
-  
-  def as_string(self):
-    # Handle different token formats
-    if isinstance(self.token, dict):
-      line = self.token.get('line', 'unknown')
-      value = self.token.get('value', '<unknown>')
-      return f"\n{'='*50}\nRUNTIME ERROR at line {line}\n{'='*50}\n{self.details}\nLocation: '{value}'\n{'='*50}\n"
-    elif isinstance(self.token, tuple):
-      # Handle tuple format: (category, subcategory, line_number)
-      category = self.token[0] if len(self.token) > 0 else 'Unknown'
-      line = self.token[2] if len(self.token) > 2 else 'unknown'
-      return f"\n{'='*50}\nRUNTIME ERROR at line {line}\n{'='*50}\n{self.details}\nCategory: {category}\n{'='*50}\n"
-    else:
-      return f"\n{'='*50}\nRUNTIME ERROR\n{'='*50}\n{self.details}\n{'='*50}\n"
 
     
 #------------------------------------------------------------------------------------------------
@@ -355,12 +338,11 @@ class Parser:
   def __init__(self, tokens, filename='<stdin>'):
     self.tokens = tokens
     self.token_index = -1
-    self.parse_stack = []  # Stack to track parsing context
+    self.parse_stack = []  # added stack to track parsing context
     self.filename = filename
     self.advance()
   
   def push_context(self, function_name, expected=None):
-    """Push a parsing context onto the stack"""
     ctx = {
       'function': function_name,
       'line': self.current_token['line'] if self.current_token else 0,
@@ -371,7 +353,6 @@ class Parser:
     self.parse_stack.append(ctx)
   
   def pop_context(self):
-    """Pop the most recent parsing context"""
     if self.parse_stack:
       self.parse_stack.pop()
 
@@ -383,10 +364,6 @@ class Parser:
         found = 'end of input'
       else:
         found = self.current_token['value']
-    
-    # If parse_stack is empty, create a minimal stack with filename from parser
-    parse_stack = list(self.parse_stack) if self.parse_stack else [{'filename': self.filename, 'line': start_token.get('line', 0) if isinstance(start_token, dict) else 0, 'token': start_token, 'function': 'parse', 'expected': None}]
-    
     return InvalidSyntaxError(
       start_token,
       details='',
@@ -396,7 +373,7 @@ class Parser:
       context_kind=context_kind,
       start_token=start_token,
       failing_token=failing_token or self.current_token,
-      parse_stack=parse_stack
+      parse_stack=list(self.parse_stack)  # Copy current stack
     )
 
   def peek(self, offset=1):
@@ -415,25 +392,12 @@ class Parser:
     self.push_context('program', 'HAI ... KTHXBYE')
     res = ParseResult()
     sections = []
-    
-    # Skip any leading newlines at the start of the file
-    while self.current_token and self.current_token['type'] == TokenType.NEWLINE:
-      self.advance()
-    
     start = self.current_token if self.current_token else {'value':'<START>','line':1,'type':'<START>','category':'Start'}
     if (self.current_token['type'] != TokenType.HAI):
       self.pop_context()
-      return res.failure(self.syntax_error(start, 'HAI', (self.current_token['value'] if self.current_token else 'end of input'), category='Program Delimiter', context_kind='program'))
+      return res.failure(InvalidSyntaxError(start, "Missing program start", expected='HAI', found=(self.current_token['value'] if self.current_token else 'end of input'), category='Program Delimiter', context_kind='program', start_token=start, parse_stack=list(self.parse_stack)))
 
     self.advance() # Eat HAI
-
-    # Optionally eat version number (e.g., 1.2)
-    if self.current_token['type'] in (TokenType.FLOAT, TokenType.INTEGER):
-      self.advance()
-
-    # Skip newlines after HAI
-    while self.current_token['type'] == TokenType.NEWLINE:
-      self.advance()
 
     # Check if there's a variable section
     if self.current_token['type'] == TokenType.WAZZUP:
@@ -446,7 +410,7 @@ class Parser:
     # If we see a variable declaration outside of WAZZUP
     elif self.current_token['type'] == TokenType.I_HAS_A:
       self.pop_context()
-      return res.failure(self.syntax_error(self.current_token, ['WAZZUP','statement'], 'I HAS A', category='Variable Declaration', context_kind='program'))
+      return res.failure(InvalidSyntaxError(self.current_token, "Var decl outside WAZZUP", expected=['WAZZUP','statement'], found='I HAS A', category='Variable Declaration', context_kind='program', start_token=self.current_token, parse_stack=list(self.parse_stack)))
 
     # try to parse statements
     list_of_statements = res.register(self.statement_list())
@@ -460,17 +424,10 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def variable_section(self):
-    self.push_context('variable_section', 'WAZZUP ... BUHBYE')
     res = ParseResult()
     variable_declarations = []
 
     while (self.current_token['type'] != TokenType.BUHBYE and self.token_index < len(self.tokens) - 1):
-      # Skip leading newlines
-      while self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()
-      if self.current_token['type'] == TokenType.BUHBYE or self.token_index >= len(self.tokens) - 1:
-        break
-      
       variable_declaration = res.register(self.variable_declaration())
 
       # Has error
@@ -478,24 +435,14 @@ class Parser:
         return res
 
       variable_declarations.append(variable_declaration)
-      
-      # Skip newlines after variable declaration
-      while self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()
 
     # Error
     if (self.current_token['type'] != TokenType.BUHBYE):
-      self.pop_context()
-      return res.failure(self.syntax_error(self.current_token, 'BUHBYE', self.current_token['value'], category='Variable List Delimiter', context_kind='variable_section'))
+      return res.failure(InvalidSyntaxError(self.current_token, "Unterminated WAZZUP section", expected='BUHBYE', found=(self.current_token['value']), category='Variable List Delimiter', context_kind='variable_section', start_token=self.current_token))
 
     # No error
     self.advance() # Eat BUHBYE
-    
-    # Skip newlines after BUHBYE
-    while self.current_token['type'] == TokenType.NEWLINE:
-      self.advance()
 
-    self.pop_context()
     return res.success(VarDecListNode(variable_declarations))
 
   def variable_declaration(self):
@@ -539,19 +486,10 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def statement_list(self):
-    self.push_context('statement_list', 'list of statements')
     res = ParseResult()
     statements = []
 
     while (self.current_token['type'] != TokenType.KTHXBYE and self.token_index < len(self.tokens) - 1):
-      # Skip leading newlines
-      while self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()
-      
-      # Check again after skipping newlines
-      if self.current_token['type'] == TokenType.KTHXBYE or self.token_index >= len(self.tokens) - 1:
-        break
-      
       prev_token_index = self.token_index  # Track position before parsing
       statement = res.register(self.statement())
 
@@ -561,19 +499,12 @@ class Parser:
 
       # Safety check: ensure we advanced at least one token
       if self.token_index == prev_token_index:
-        return res.failure(self.syntax_error(self.current_token, 'valid statement', self.current_token['value'], category='Statement', context_kind='statement_list'))
+        return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck - no progress made", expected='valid statement', found=self.current_token['value'], category='Statement', context_kind='statement_list', start_token=self.current_token))
 
       statements.append(statement)
-      
-      # Check for statement separators (newline or comma)
-      if self.current_token['type'] == TokenType.COMMA:
-        self.advance()  # Eat the comma and continue to next statement
-      elif self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()  # Eat the newline and continue to next statement
-      # If neither comma nor newline, continue (for cases like after OIC, etc.)
 
     if (self.current_token['type'] != TokenType.KTHXBYE):
-      return res.failure(self.syntax_error(self.current_token, 'KTHXBYE', self.current_token['value'], category='Code Delimiter', context_kind='program_body'))
+      return res.failure(InvalidSyntaxError(self.current_token, "Unterminated program body", expected='KTHXBYE', found=self.current_token['value'], category='Code Delimiter', context_kind='program_body', start_token=self.current_token))
 
     return res.success(StatementListNode(statements))
 
@@ -614,29 +545,21 @@ class Parser:
 
     # Try loop (IM IN YR)
     res.node = res.register(self.loop_statement())
-    if res.error or res.node:
-      self.pop_context()
-      return res
+    if res.error or res.node: return res
 
     # Try function definition (HOW IZ I)
     res.node = res.register(self.function_definition())
-    if res.error or res.node:
-      self.pop_context()
-      return res
+    if res.error or res.node: return res
 
     # Try function call (I IZ)
     res.node = res.register(self.function_call())
-    if res.error or res.node:
-      self.pop_context()
-      return res
+    if res.error or res.node: return res
 
     # Try break statement (GTFO)
     res.node = res.register(self.break_statement())
-    if res.error or res.node:
-      self.pop_context()
-      return res
+    if res.error or res.node: return res
 
-    # Try expression-statements (operations and assignments (?), not literals)
+    # Try expression-statements (operations and assignments lang, not literals)
     if self.current_token['type'] == TokenType.IDENTIFIER:
         identifier_token = self.current_token
         self.advance()
@@ -646,9 +569,7 @@ class Parser:
             self.token_index -= 1
             self.current_token = self.tokens[self.token_index]
             res.node = res.register(self.assignment_statement())
-            if res.error or res.node:
-              self.pop_context()
-              return res
+            if res.error or res.node: return res
         else:
             # if identifier looks like existing tokens
             suspicious_tokens = {
@@ -656,18 +577,17 @@ class Parser:
                 TokenType.IDENTIFIER, TokenType.WIN, TokenType.FAIL
             }
             if self.current_token['type'] in suspicious_tokens:
-                error = self.syntax_error(
+                return res.failure(self.syntax_error(
                     identifier_token, 
                     'valid statement keyword or assignment operator',
                     identifier_token['value'],
                     category='Statement',
                     context_kind='statement'
-                )
-                self.pop_context()
-                return res.failure(error)
+                ))
             else:
-                # Return VarAccessNode - we've already advanced past the identifier
-                self.pop_context()
+                # backtrack to let it parse as expression
+                self.token_index -= 1
+                self.current_token = self.tokens[self.token_index]
                 return res.success(VarAccessNode(identifier_token))
     elif self.current_token['type'] in (
         # Arithmetic operations
@@ -689,9 +609,8 @@ class Parser:
           return res
 
     # Can't parse
-    error = self.syntax_error(self.current_token, 'valid statement', self.current_token['value'], category='Statement', context_kind='statement')
     self.pop_context()
-    return res.failure(error)
+    return res.failure(InvalidSyntaxError(self.current_token, 'Unexpected Syntax', expected='statement', found=self.current_token['value'], category='Statement', context_kind='statement', start_token=self.current_token))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def expression(self):
@@ -785,7 +704,6 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def string_concatenation(self):
-    self.push_context('string_concatenation', 'SMOOSH <expr> [AN <expr>]... [MKAY]')
     res = ParseResult()
     # Grammar: <concatenation> ::= SMOOSH <nestable_expr> <multi_expression_nestable>
     operands = []
@@ -800,15 +718,11 @@ class Parser:
 
       # Parse multi_expression_nestable (handles AN <nestable_expr> recursively)
       additional_operands = res.register(self.multi_expression_nestable())
-      if res.error:
-        self.pop_context()
-        return res
+      if res.error: return res
       operands.extend(additional_operands)
 
-      self.pop_context()
       return res.success(StringConcatNode(operands))
 
-    self.pop_context()
     return res
 
   def string_literal(self):
@@ -839,7 +753,6 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def arithmetic_binary_operation(self):
-    self.push_context('arithmetic_binary_operation', '<operation> <expr> AN <expr>')
     res = ParseResult()
 
     # if self.current_token[TOKEN_TAG] in (PRODUKT_OF, QUOSHUNT_OF, SUM_OF, DIFF_OF, BIGGR_OF, SMALLR_OF):
@@ -849,16 +762,12 @@ class Parser:
 
     # Parse the left operand
     left = res.register(self.arithmetic_expression())
-    if res.error:
-      self.pop_context()
-      return res
+    if res.error: return res
     if left is None:
-      self.pop_context()
       return res.failure(self.syntax_error(operation, 'left operand expression', category='Arithmetic Operation', context_kind='arithmetic'))
 
     # check for 'AN' keyword
     if self.current_token['type'] != TokenType.AN:
-      self.pop_context()
       return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Arithmetic Operation', context_kind='arithmetic'))
 
     # Advance past the 'AN' keyword
@@ -866,15 +775,11 @@ class Parser:
 
     # Parse the right operand which may also be an expression
     right = res.register(self.arithmetic_expression())
-    if res.error:
-      self.pop_context()
-      return res
+    if res.error: return res
     if right is None:
-      self.pop_context()
       return res.failure(self.syntax_error(operation, 'right operand expression', category='Arithmetic Operation', context_kind='arithmetic'))
 
     # Return an operation node with left and right operands
-    self.pop_context()
     return res.success(ArithmeticBinaryOpNode(left, operation, right))
 
   def arithmetic_expression(self):
@@ -904,11 +809,10 @@ class Parser:
       else:
         return res.success(FloatNode(token))
 
-    return res.failure(self.syntax_error(token, 'int or float', token['value'] if token else 'end of input'))
+    return res.failure(InvalidSyntaxError(token, 'Expected int or float!'))
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def boolean_nest(self):
-    self.push_context('boolean_nest', 'boolean operation')
     res = ParseResult()
     # Grammar: <boolean_nest> ::= BOTH OF <nestable_expr> AN <nestable_expr> | EITHER OF <nestable_expr> AN <nestable_expr> | WON OF <nestable_expr> AN <nestable_expr> | NOT <nestable_expr>
 
@@ -918,11 +822,9 @@ class Parser:
     elif self.current_token['type'] == TokenType.NOT:
       res.node = res.register(self.boolean_unary_operation())
 
-    self.pop_context()
     return res
 
   def boolean_non_nest(self):
-    self.push_context('boolean_non_nest', 'ALL OF / ANY OF ... MKAY')
     res = ParseResult()
     # Grammar: <boolean_non_nest> ::= ALL OF <nestable_expr> AN <multi_expression_nestable> MKAY | ANY OF <nestable_expr> AN <multi_expression_nestable> MKAY
     boolean_statements = []
@@ -933,36 +835,28 @@ class Parser:
 
       # Parse the first nestable expression
       first_operand = res.register(self.nestable_expr())
-      if res.error:
-        self.pop_context()
-        return res
+      if res.error: return res
       boolean_statements.append(first_operand)
 
       # Expect AN
       if self.current_token['type'] != TokenType.AN:
-        self.pop_context()
         return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Boolean Multi-Operand', context_kind='boolean_any_all'))
 
       # Don't eat AN yet - let multi_expression_nestable handle it
 
       # Parse multi_expression_nestable (which starts with AN)
       additional_operands = res.register(self.multi_expression_nestable())
-      if res.error:
-        self.pop_context()
-        return res
+      if res.error: return res
       boolean_statements.extend(additional_operands)
 
       # Expect MKAY
       if self.current_token['type'] != TokenType.MKAY:
-        self.pop_context()
         return res.failure(self.syntax_error(operation, 'MKAY', self.current_token['value'], category='Boolean Multi-Operand', context_kind='boolean_any_all'))
 
       self.advance() # Eat MKAY
 
-      self.pop_context()
       return res.success(BooleanTernaryOpNode(operation, boolean_statements))
 
-    self.pop_context()
     return res
 
   def multi_expression_nestable(self):
@@ -1038,7 +932,6 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def comparison_operation(self):
-    self.push_context('comparison_operation', 'BOTH SAEM / DIFFRINT')
     res = ParseResult()
     # Grammar: <comparison> ::= BOTH SAEM <nestable_expr> AN <nestable_expr> | DIFFRINT <nestable_expr> AN <nestable_expr>
     # Grammar: <relational> ::= BOTH SAEM <nestable_expr> AN BIGGR OF <nestable_expr> AN <nestable_expr> | ...
@@ -1049,16 +942,12 @@ class Parser:
 
       # Parse the left operand (nestable_expr)
       left = res.register(self.nestable_expr())
-      if res.error:
-        self.pop_context()
-        return res
+      if res.error: return res
       if left is None:
-        self.pop_context()
         return res.failure(self.syntax_error(operation, 'left operand expression', category='Comparison', context_kind='comparison'))
 
       # Check for 'AN' keyword
       if self.current_token['type'] != TokenType.AN:
-        self.pop_context()
         return res.failure(self.syntax_error(operation, 'AN', self.current_token['value'], category='Comparison', context_kind='comparison'))
 
       # Advance past the 'AN' keyword
@@ -1069,32 +958,23 @@ class Parser:
       if self.current_token['type'] in (TokenType.BIGGR_OF, TokenType.SMALLR_OF):
         # This is a relational operation
         right = res.register(self.arithmetic_binary_operation())
-        if res.error:
-          self.pop_context()
-          return res
+        if res.error: return res
         if right is None:
-          self.pop_context()
           return res.failure(self.syntax_error(operation, 'right operand expression', category='Comparison', context_kind='comparison'))
       else:
         # Regular comparison
         right = res.register(self.nestable_expr())
-        if res.error:
-          self.pop_context()
-          return res
+        if res.error: return res
         if right is None:
-          self.pop_context()
           return res.failure(self.syntax_error(operation, 'right operand expression', category='Comparison', context_kind='comparison'))
 
       # Return an operation node with left and right operands
-      self.pop_context()
       return res.success(ComparisonOpNode(left, operation, right))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def print_statement(self):
-    self.push_context('print_statement', 'VISIBLE <expr> [<expr>]...')
     res = ParseResult()
     # Grammar: <output> ::= VISIBLE <print_args>
     # Grammar: <print_args> ::= <expression> | <expression> + <print_args>
@@ -1105,14 +985,11 @@ class Parser:
 
       # Parse the first expression (required - VISIBLE cannot be empty)
       first_operand = res.register(self.expression())
-      if res.error:
-        self.pop_context()
-        return res
+      if res.error: return res
 
       # Check if expression returned None (empty VISIBLE statement)
       if first_operand is None:
         visible_tok = self.peek(-1) or self.current_token
-        self.pop_context()
         return res.failure(self.syntax_error(visible_tok, 'expression operand', visible_tok['value'], category='Output Keyword', context_kind='print'))
 
       operands.append(first_operand)
@@ -1122,21 +999,16 @@ class Parser:
         self.advance() # Eat '!', 'AN', or '+'
 
         additional_operand = res.register(self.expression())
-        if res.error:
-          self.pop_context()
-          return res
+        if res.error: return res
         operands.append(additional_operand)
 
       # Success
-      self.pop_context()
       return res.success(PrintNode(operands))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def typecast(self):
-    self.push_context('typecast', 'MAEK <expr> A <type>')
     res = ParseResult()
     # Supports two syntaxes:
     # 1. MAEK A <var> <type_literal> - alternative syntax
@@ -1152,31 +1024,24 @@ class Parser:
 
         # Parse the variable/expression to typecast
         source_value = res.register(self.nestable_expr())
-        if res.error:
-          self.pop_context()
-          return res
+        if res.error: return res
 
         # Parse type literal (NOOB, TROOF, NUMBAR, NUMBR, YARN)
         if self.current_token['value'] in ("NUMBAR", "NUMBR", "YARN", "TROOF", "NOOB"):
           desired_type = self.current_token['value']
           self.advance() # Eat desired type
-          self.pop_context()
           return res.success(TypecastNode(source_value, desired_type))
         else:
-          self.pop_context()
           return res.failure(self.syntax_error(self.current_token, ['NOOB','TROOF','NUMBAR','NUMBR','YARN'], self.current_token['value'], category='Type Literal', context_kind='typecast'))
 
       else:
         # MAEK <expr> A <type> syntax
         # Parse the nestable expression to typecast
         source_value = res.register(self.nestable_expr())
-        if res.error:
-          self.pop_context()
-          return res
+        if res.error: return res
 
         # Expect 'A' keyword
         if self.current_token['type'] != TokenType.A:
-          self.pop_context()
           return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'A', self.current_token['value'], category='Typecast', context_kind='typecast'))
 
         self.advance() # Eat A
@@ -1185,18 +1050,14 @@ class Parser:
         if self.current_token['value'] in ("NUMBAR", "NUMBR", "YARN", "TROOF", "NOOB"):
           desired_type = self.current_token['value']
           self.advance() # Eat desired type
-          self.pop_context()
           return res.success(TypecastNode(source_value, desired_type))
         else:
-          self.pop_context()
           return res.failure(self.syntax_error(self.current_token, ['NOOB','TROOF','NUMBAR','NUMBR','YARN'], self.current_token['value'], category='Type Literal', context_kind='typecast'))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def assignment_statement(self):
-    self.push_context('assignment_statement', '<var> R <expr> | <var> IS NOW A <type>')
     res = ParseResult()
 
     if self.current_token['type'] == TokenType.IDENTIFIER:
@@ -1207,20 +1068,17 @@ class Parser:
       # Check for 'R' keyword
       if self.current_token['type'] not in (TokenType.R, TokenType.IS_NOW_A):
         # If next token looks like start of an expression, treat as missing assignment operator
-        # Note: I_IZ is NOT included because it starts a new statement, not an expression
         expr_start_types = {
           TokenType.PRODUKT_OF, TokenType.QUOSHUNT_OF, TokenType.SUM_OF, TokenType.DIFF_OF,
           TokenType.MOD_OF, TokenType.BIGGR_OF, TokenType.SMALLR_OF, TokenType.BOTH_OF,
           TokenType.EITHER_OF, TokenType.WON_OF, TokenType.NOT, TokenType.BOTH_SAEM,
-          TokenType.DIFFRINT, TokenType.MAEK, TokenType.INTEGER,
+          TokenType.DIFFRINT, TokenType.I_IZ, TokenType.MAEK, TokenType.INTEGER,
           TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.NOOB,
           TokenType.SMOOSH, TokenType.ALL_OF, TokenType.ANY_OF
         }
         if self.current_token['type'] in expr_start_types:
-          self.pop_context()
           return res.failure(self.syntax_error(var_to_access, ['R','IS NOW A'], self.current_token['value'], category='Assignment', context_kind='assignment'))
         # Otherwise treat as simple variable access (standalone)
-        self.pop_context()
         return res.success(VarAccessNode(var_to_access))
 
 
@@ -1233,10 +1091,8 @@ class Parser:
         # Check for errors
         if value_to_assign is None:
           r_token = self.peek(-1) or var_to_access
-          self.pop_context()
           return res.failure(self.syntax_error(r_token, 'expression', (self.current_token['value'] if self.current_token else 'end of input'), category='Assignment Operator', context_kind='assignment'))
 
-        self.pop_context()
         return res.success(VarAssignmentNode(var_to_access, value_to_assign))
 
       # Var assignment with TYPECASTING
@@ -1244,7 +1100,6 @@ class Parser:
         self.advance() # Eat IS NOW A
 
         if self.current_token['value'] not in ("NUMBAR", "NUMBR", "YARN", "TROOF"):
-          self.pop_context()
           return res.failure(self.syntax_error(self.current_token, ['NUMBAR','NUMBR','YARN','TROOF'], self.current_token['value'], category='Type Literal', context_kind='assignment_typecast'))
 
         # Else, continue
@@ -1252,15 +1107,12 @@ class Parser:
 
         self.advance() # Eat the desired type
 
-        self.pop_context()
         return res.success(VarAssignmentNode(var_to_access, TypecastNode(VarAccessNode(var_to_access), desired_type)))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def input_statement(self):
-    self.push_context('input_statement', 'GIMMEH <var>')
     res = ParseResult()
 
     if self.current_token['type'] == TokenType.GIMMEH:
@@ -1268,36 +1120,28 @@ class Parser:
 
       # Error
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'IDENTIFIER', self.current_token['value'], category='Input Keyword', context_kind='input'))
 
       # Check if the variable name is valid
       variable_to_access = res.register(self.variable_literal())
-      if variable_to_access is None:
-        self.pop_context()
-        return res # Error
+      if variable_to_access is None: return res # Error
 
       # Proceed to the next step (getting user input and storing it in the variable stated)
-      self.pop_context()
       return res.success(InputNode(variable_to_access))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   # TODO: GTFO
   def break_statement(self):
-    self.push_context('break_statement', 'GTFO')
     res = ParseResult()
 
     if self.current_token['type'] == TokenType.GTFO:
       break_token = self.current_token
       self.advance() # Eat GTFO
 
-      self.pop_context()
       return res.success(BreakNode(break_token))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -1309,12 +1153,7 @@ class Parser:
     # But for simplicity, we'll check if we're at O RLY
 
     if self.current_token['type'] == TokenType.O_RLY:
-      # Optional: handle comma before O RLY (if it was parsed as separate token)
       self.advance() # Eat O RLY?
-
-      # Skip newlines after O RLY?
-      while self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()
 
       # Parse if_true: YA RLY <linebreak> <statement_list> <linebreak>
       if self.current_token['type'] != TokenType.YA_RLY:
@@ -1326,21 +1165,13 @@ class Parser:
       # Parse statements for if_true block
       if_block_statements = []
       while self.current_token['type'] not in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
-        # Skip leading newlines
-        while self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
-        if self.current_token['type'] in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
-          break
-        
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
         if res.error: return res
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in if-block", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='if_block', start_token=self.current_token))
         if statement:
           if_block_statements.append(statement)
-        # Check for statement separators
-        if self.current_token['type'] == TokenType.COMMA:
-          self.advance()
-        elif self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
 
       # Parse if_false: MEBBE <expression> <linebreak> <statement_list> <linebreak> <if_false> | NO WAI <linebreak> <statement_list> <linebreak> | ε
       mebbe_cases = []  # List of (condition, statements) tuples
@@ -1357,21 +1188,13 @@ class Parser:
         # Parse statements for this MEBBE block
         mebbe_statements = []
         while self.current_token['type'] not in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
-          # Skip leading newlines
-          while self.current_token['type'] == TokenType.NEWLINE:
-            self.advance()
-          if self.current_token['type'] in (TokenType.MEBBE, TokenType.NO_WAI, TokenType.OIC, TokenType.KTHXBYE):
-            break
-          
+          prev_token_index = self.token_index
           statement = res.register(self.statement())
           if res.error: return res
+          if self.token_index == prev_token_index:
+            return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in MEBBE-block", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='mebbe_block', start_token=self.current_token))
           if statement:
             mebbe_statements.append(statement)
-          # Check for statement separators
-          if self.current_token['type'] == TokenType.COMMA:
-            self.advance()
-          elif self.current_token['type'] == TokenType.NEWLINE:
-            self.advance()
 
         mebbe_cases.append((mebbe_condition, mebbe_statements))
 
@@ -1380,25 +1203,16 @@ class Parser:
         self.advance() # Eat NO WAI
 
         while self.current_token['type'] not in (TokenType.OIC, TokenType.KTHXBYE):
-          # Skip leading newlines
-          while self.current_token['type'] == TokenType.NEWLINE:
-            self.advance()
-          if self.current_token['type'] in (TokenType.OIC, TokenType.KTHXBYE):
-            break
-          
+          prev_token_index = self.token_index
           statement = res.register(self.statement())
           if res.error: return res
+          if self.token_index == prev_token_index:
+            return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in NO WAI block", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='else_block', start_token=self.current_token))
           if statement:
             else_block_statements.append(statement)
-          # Check for statement separators
-          if self.current_token['type'] == TokenType.COMMA:
-            self.advance()
-          elif self.current_token['type'] == TokenType.NEWLINE:
-            self.advance()
 
       # Expect OIC
       if self.current_token['type'] != TokenType.OIC:
-        self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'OIC', self.current_token['value'], category='Conditional', context_kind='if'))
 
       self.advance() # Eat OIC
@@ -1415,7 +1229,6 @@ class Parser:
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def switch_case_statement(self):
-    self.push_context('switch_case_statement', 'WTF? ... OIC')
     res = ParseResult()
     cases = []
     cases_statements = []
@@ -1425,13 +1238,8 @@ class Parser:
       # Eat WTF
       self.advance()
 
-      # Skip newlines after WTF?
-      while self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()
-
       # Error
       if self.current_token['type'] != TokenType.OMG:
-        self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'OMG', self.current_token['value'], category='Switch Start', context_kind='switch'))
 
       while self.current_token['type'] == TokenType.OMG:
@@ -1441,8 +1249,7 @@ class Parser:
         self.advance()
 
         # Error
-        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.QUOTE, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
-          self.pop_context()
+        if self.current_token['type'] not in (TokenType.INTEGER, TokenType.FLOAT, TokenType.STRING, TokenType.WIN, TokenType.FAIL, TokenType.IDENTIFIER, TokenType.NOOB):
           return res.failure(self.syntax_error(self.current_token, 'literal', self.current_token['value'], category='Switch Case', context_kind='switch'))
 
         # Eat
@@ -1453,24 +1260,17 @@ class Parser:
           return res
 
         while self.current_token['type'] not in (TokenType.OMG, TokenType.OMGWTF, TokenType.OIC, TokenType.KTHXBYE):
-          # Skip leading newlines
-          while self.current_token['type'] == TokenType.NEWLINE:
-            self.advance()
-          if self.current_token['type'] in (TokenType.OMG, TokenType.OMGWTF, TokenType.OIC, TokenType.KTHXBYE):
-            break
-          
+          prev_token_index = self.token_index
           statement = res.register(self.statement())
 
           # Has error
           if statement is None:
             return res
+          
+          if self.token_index == prev_token_index:
+            return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in OMG case", expected='statement or OMG/OMGWTF/OIC', found=self.current_token['value'], category='Statement', context_kind='switch_case', start_token=self.current_token))
 
           statements.append(statement)
-          # Check for statement separators
-          if self.current_token['type'] == TokenType.COMMA:
-            self.advance()
-          elif self.current_token['type'] == TokenType.NEWLINE:
-            self.advance()
         # Loop end
 
         cases.append(case_condition)
@@ -1478,7 +1278,6 @@ class Parser:
       # Loop end
 
       if self.current_token['type'] != TokenType.OMGWTF:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'OMGWTF', self.current_token['value'], category='Switch Default', context_kind='switch'))
 
       # Eat OMGWTF
@@ -1486,42 +1285,30 @@ class Parser:
 
       # Add switch case
       while self.current_token['type'] not in (TokenType.OIC, TokenType.KTHXBYE):
-        # Skip leading newlines
-        while self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
-        if self.current_token['type'] in (TokenType.OIC, TokenType.KTHXBYE):
-          break
-        
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
 
         # Has error
         if statement is None:
-          self.pop_context()
           return res
+        
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in OMGWTF default case", expected='statement or OIC', found=self.current_token['value'], category='Statement', context_kind='switch_default', start_token=self.current_token))
 
         default_case_statements.append(statement)
-        # Check for statement separators
-        if self.current_token['type'] == TokenType.COMMA:
-          self.advance()
-        elif self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
 
       if self.current_token['type'] != TokenType.OIC:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'OIC', self.current_token['value'], category='Switch Terminator', context_kind='switch'))
 
       # Eat OIC
       self.advance()
 
-      self.pop_context()
       return res.success(SwitchCaseNode(cases, cases_statements, default_case_statements))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def loop_statement(self):
-    self.push_context('loop_statement', 'IM IN YR ... IM OUTTA YR')
     res = ParseResult()
     label = None
     operation = None
@@ -1534,7 +1321,6 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        self.pop_context()
         return res.failure(self.syntax_error(self.peek(-1) or self.current_token, 'loop label IDENTIFIER', self.current_token['value'], category='Loop Start', context_kind='loop'))
 
       label = self.current_token['value']
@@ -1542,7 +1328,6 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] not in (TokenType.UPPIN, TokenType.NERFIN):
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, ['UPPIN','NERFIN'], self.current_token['value'], category='Loop Operation', context_kind='loop'))
 
       # Else, no error
@@ -1552,7 +1337,6 @@ class Parser:
       self.advance()
 
       if self.current_token['type'] != TokenType.YR:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Loop Clause', context_kind='loop'))
 
       # Else, no error
@@ -1561,7 +1345,6 @@ class Parser:
 
       # Var
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'loop variable IDENTIFIER', self.current_token['value'], category='Loop Variable', context_kind='loop'))
 
       # Get the desired variable to access (same with assignment statement)
@@ -1585,35 +1368,26 @@ class Parser:
 
       # Loop body
       while self.current_token['type'] not in (TokenType.IM_OUTTA_YR, TokenType.KTHXBYE):
-        # Skip leading newlines
-        while self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
-        if self.current_token['type'] in (TokenType.IM_OUTTA_YR, TokenType.KTHXBYE):
-          break
-        
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
 
         # Has error
         if statement is None:
           return res
+        
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in loop body", expected='statement or IM OUTTA YR', found=self.current_token['value'], category='Statement', context_kind='loop_body', start_token=self.current_token))
 
         body_statements.append(statement)
-        # Check for statement separators
-        if self.current_token['type'] == TokenType.COMMA:
-          self.advance()
-        elif self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
 
       # Loop out
       if self.current_token['type'] != TokenType.IM_OUTTA_YR:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'IM OUTTA YR', self.current_token['value'], category='Loop Terminator', context_kind='loop'))
 
       # Eat IM OUTTA YR
       self.advance()
 
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'loop exit label IDENTIFIER', self.current_token['value'], category='Loop Terminator', context_kind='loop'))
 
       out_label = self.current_token['value']
@@ -1623,19 +1397,15 @@ class Parser:
 
       # print(label, out_label)
       if label != out_label:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, label, out_label, category='Loop Terminator', context_kind='loop'))
 
 
-      self.pop_context()
       return res.success(LoopNode(label, operation, variable, clause_type, til_wile_expression, body_statements))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def function_definition(self):
-    self.push_context('function_definition', 'HOW IZ I ... IF U SAY SO')
     res = ParseResult()
     function_name = None
     parameters = []
@@ -1647,7 +1417,6 @@ class Parser:
 
       # Identifier
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'function name IDENTIFIER', self.current_token['value'], category='Function Definition', context_kind='function_def'))
 
       function_name = self.current_token
@@ -1671,69 +1440,47 @@ class Parser:
 
           # Expect YR
           if self.current_token['type'] != TokenType.YR:
-            self.pop_context()
             return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Function Parameters', context_kind='function_def'))
 
           self.advance() # Eat YR
 
           additional_param = res.register(self.expression())
-          if additional_param is None:
-            self.pop_context()
-            return res # Has error
+          if additional_param is None: return res # Has error
 
           parameters.append(additional_param)
 
       # function body
       while self.current_token['type'] not in (TokenType.FOUND_YR, TokenType.IF_U_SAY_SO, TokenType.KTHXBYE):
-        # Skip leading newlines
-        while self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
-        if self.current_token['type'] in (TokenType.FOUND_YR, TokenType.IF_U_SAY_SO, TokenType.KTHXBYE):
-          break
-        
+        prev_token_index = self.token_index
         statement = res.register(self.statement())
-        if statement is None:
-          self.pop_context()
-          return res # Has error
+        if statement is None: return res # Has error
+        
+        if self.token_index == prev_token_index:
+          return res.failure(InvalidSyntaxError(self.current_token, "Parser stuck in function body", expected='statement or IF U SAY SO', found=self.current_token['value'], category='Statement', context_kind='function_body', start_token=self.current_token))
 
         body_statements.append(statement)
-        # Check for statement separators
-        if self.current_token['type'] == TokenType.COMMA:
-          self.advance()
-        elif self.current_token['type'] == TokenType.NEWLINE:
-          self.advance()
 
       if self.current_token['type'] == TokenType.FOUND_YR:
         # Eat FOUND YR
         self.advance()
 
         return_expression  = res.register(self.expression())
-        if return_expression is None:
-          self.pop_context()
-          return res # Has error
+        if return_expression is None: return res # Has error
 
         body_statements.append(ReturnNode(return_expression))
 
-      # Skip newlines before IF U SAY SO
-      while self.current_token['type'] == TokenType.NEWLINE:
-        self.advance()
-
       if self.current_token['type'] != TokenType.IF_U_SAY_SO:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'IF U SAY SO', self.current_token['value'], category='Function Terminator', context_kind='function_def'))
 
       # Eat IF U SAY SO
       self.advance()
 
-      self.pop_context()
       return res.success(FuncDefNode(function_name, parameters, body_statements))
 
-    self.pop_context()
     return res
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
   def function_call(self):
-    self.push_context('function_call', 'I IZ <func> [YR <param>]... [MKAY]')
     res = ParseResult()
     function_name = None
     parameters = []
@@ -1744,13 +1491,10 @@ class Parser:
 
       # Identifier
       if self.current_token['type'] != TokenType.IDENTIFIER:
-        self.pop_context()
         return res.failure(self.syntax_error(self.current_token, 'function name IDENTIFIER', self.current_token['value'], category='Function Call', context_kind='function_call'))
 
       function_name = res.register(self.expression())
-      if function_name is None:
-        self.pop_context()
-        return res
+      if function_name is None: return res
 
       # Check if there are parameters
       if self.current_token['type'] == TokenType.YR:
@@ -1758,9 +1502,7 @@ class Parser:
         self.advance()
 
         first_param = res.register(self.expression())
-        if first_param is None:
-          self.pop_context()
-          return res # Has error
+        if first_param is None: return res # Has error
 
         parameters.append(first_param)
 
@@ -1771,24 +1513,22 @@ class Parser:
 
           # Expect YR
           if self.current_token['type'] != TokenType.YR:
-            self.pop_context()
             return res.failure(self.syntax_error(self.current_token, 'YR', self.current_token['value'], category='Function Call Parameters', context_kind='function_call'))
 
           self.advance() # Eat YR
 
           additional_param = res.register(self.expression())
-          if additional_param is None:
-            self.pop_context()
-            return res # Has error
+          if additional_param is None: return res # Has error
 
           parameters.append(additional_param)
 
-      # MKAY is optional for function calls - only consume it if present
-      if self.current_token['type'] == TokenType.MKAY:
-        self.advance() # Eat MKAY
+      # function body
+      if self.current_token['type'] != TokenType.MKAY:
+        return res.failure(self.syntax_error(self.current_token, 'MKAY', self.current_token['value'], category='Function Call Terminator', context_kind='function_call'))
 
-      self.pop_context()
+      # Eat MKAY
+      self.advance()
+
       return res.success(FuncCallNode(function_name, parameters))
 
-    self.pop_context()
     return res
