@@ -11,7 +11,7 @@ HAI
     SUM OF monde AN num
     VISIBLE monde
 
-    GIMMEH
+    GIMMEH ...
     num
     GIMMEH monde
 
