@@ -1,20 +1,23 @@
+#---IMPORTS---#
 import os
 import sys
 import queue
 import threading
-from PyQt5.QtGui import QFont, QKeySequence, QTextCursor, QTextCharFormat, QColor, QIcon, QFontDatabase, QPixmap
+from PyQt5.QtGui import QFont, QKeySequence, QTextCursor, QTextCharFormat, QColor, QIcon, QFontDatabase, QPixmap, QPainter 
 from PyQt5.QtWidgets import (QWidget, QApplication, QMainWindow, QFileDialog,
                             QHBoxLayout, QVBoxLayout,QTextEdit,
                             QShortcut, QInputDialog, QPushButton,
                             QTableWidget, QTableWidgetItem, QHeaderView, QLabel,
-                            QMenu, QTabWidget, QAction, QFrame)
+                            QMenu, QTabWidget, QAction, QFrame, QPlainTextEdit)
 from PyQt5.QtCore import Qt, QThread, QSize, pyqtSignal
 from src.lexer import tokenizer
 from src.parser.parser import Parser
 from src.interpreter.runtime import SymbolTable, Context
 from src.interpreter.interpreter import Interpreter
 from src.interpreter.values import Number, String, Boolean, Noob, Function
+#---END OF IMPORTS---#
 
+#---GUI CLASSES---#
 
 # For managing persistence
 class TextContentManager: # for text input
@@ -235,17 +238,99 @@ class InterpreterWorker(QThread):
         finally:
             self.finished.emit()
 
+class LineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.code_editor = editor
+
+    def sizeHint(self):
+        return self.code_editor.lineNumberAreaSize()
+
+    def paintEvent(self, event):
+        self.code_editor.lineNumberAreaPaintEvent(event)
+
+class CodeEditor(QPlainTextEdit): # Actual code editor with line numbers
+    def __init__(self, global_font):
+        super().__init__()
+        self.lineNumberArea = LineNumberArea(self)
+
+        self.document().blockCountChanged.connect(self.updateLineNumberAreaWidth)
+        self.verticalScrollBar().valueChanged.connect(self.updateLineNumberArea)
+        self.cursorPositionChanged.connect(self.updateLineNumberArea)
+        self.textChanged.connect(self.updateLineNumberArea)
+        self.global_font = global_font
+        self.updateLineNumberAreaWidth(0)
+
+    def lineNumberAreaWidth(self):
+        digits = len(str(max(1, self.document().blockCount())))
+        return 10 + self.fontMetrics().horizontalAdvance('9') * digits
+
+    def lineNumberAreaSize(self):
+        return self.lineNumberAreaWidth(), 0
+
+    def updateLineNumberAreaWidth(self, _):
+        self.setViewportMargins(self.lineNumberAreaWidth(), 0, 0, 0)
+
+    def updateLineNumberArea(self, _=None):
+        rect = self.viewport().rect()
+        self.lineNumberArea.update(0, rect.y(), self.lineNumberArea.width(), rect.height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.lineNumberArea.setGeometry(
+            cr.left(), cr.top(),
+            self.lineNumberAreaWidth(), cr.height()
+        )
+
+    def lineNumberAreaPaintEvent(self, event):
+        painter = QPainter(self.lineNumberArea)
+        painter.fillRect(event.rect(), QColor("#1F1F1F"))  # dark margin background
+
+        block = self.firstVisibleBlock()
+        block_number = block.blockNumber()
+        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+
+        while block.isValid() and top <= event.rect().bottom():
+
+            # set font
+            global_font = QFont(self.global_font, 11)
+            painter.setFont(global_font)
+
+            if block.isVisible() and bottom >= event.rect().top():
+                number = str(block_number + 1)
+                painter.setPen(QColor("#4A4A4A"))  # line-number text color
+                painter.drawText(
+                    0, top,
+                    self.lineNumberArea.width() - 5,
+                    self.fontMetrics().height(),
+                    Qt.AlignmentFlag.AlignRight,
+                    number
+                )
+                
+            block = block.next()
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+            block_number += 1
+
+#---END OF GUI CLASSES---#
+
 # Helper function to reset zoom
 def reset_zoom(text_input, default_size, global_font):
     inter_font =  QFont(global_font, default_size)
     text_input.setFont(inter_font)
     text_input.setFont(global_font)
 
+
+
 def text_edit(text_editor, file_manager, content_manager, parent_widget, global_font): # Text editor panel
     editor_layout = QVBoxLayout() # main vertical layout
     text_editor.setLayout(editor_layout)
     text_editor.setStyleSheet("background-color: #1F1F1F; border: none;")   
-    text_input = QTextEdit() 
+    
+    # actual text input area
+    text_input = CodeEditor(global_font) 
     text_input.setPlaceholderText("Type here...")
 
     # custom font
@@ -592,6 +677,7 @@ def update_token_view(table, lexemes): # update table with the lexemes/identifie
             border: none;
             font-size: 7px;
             color: #FAFAFA;
+            background-color: #1F1F1F;
         }
                         
         QHeaderView::section {
@@ -753,7 +839,7 @@ def save_current_tab(tab_widget, win): # For saving current tab's status
     text_input = current_tab.property("text_input")
     file_manager = current_tab.property("file_manager")
     content_manager = current_tab.property("content_manager")
-    
+
     save_and_store(text_input, file_manager, content_manager, win) # save and store content
       #---- Update tab title ----#
     tab_widget.setTabText(current_index, os.path.basename(file_manager.file_name))
@@ -767,6 +853,7 @@ def layout(win, global_font, global_font1): # Main Layout
     # for data persistence
     lexeme_manager = LexemeManager()
     
+    # layouts
     main_layout = QVBoxLayout()
     side_layout = QVBoxLayout()
     minor_layout = QVBoxLayout()
@@ -927,6 +1014,16 @@ def layout(win, global_font, global_font1): # Main Layout
     # text editor layout
     minor_layout.addWidget(tab_widget, 2)
     minor_layout.setContentsMargins(0,0,0,0)
+
+    # # console layout
+    # console_frame = QFrame()
+    # console_layout = QVBoxLayout()
+    # console_frame.setLayout(console_layout)
+    # console_label = QLabel("Terminal")
+    # console_layout.addWidget(console_label,1)
+    # console_layout.addWidget(console,5)
+    # console_layout.setContentsMargins(10,0,10,0) 
+
 
     # right column layout (symbol table on top, lexeme table on bottom)
     right_column.addWidget(symbol_table_widget, 1)

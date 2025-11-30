@@ -22,8 +22,8 @@ def main():
         # f"{base}/05_bool.lol",
         # f"{base}/06_comparison.lol",
         # f"{base}/07_ifelse.lol",
-        f"{base}/08_switch.lol",
-        # f"{base}/09_loops.lol",
+        # f"{base}/08_switch.lol",
+        f"{base}/09_loops.lol",
         # f"{base}/10_functions.lol",
     ]
 
