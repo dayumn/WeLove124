@@ -1063,14 +1063,16 @@ def create_main_layout(window, font_family, monospace_font):
     tab_widget.setTabsClosable(True)
     tab_widget.setDocumentMode(True)
     tab_widget.setMovable(True)
-    tab_widget.setExpanding(False)
-    tab_widget.tabBar().setElideMode(Qt.ElideMode.ElideRight) # shorten name
     tab_widget.setFont(QFont(font_family, 9))
+    
+    # customize tab bar
+    tab_bar = tab_widget.tabBar()
+    tab_bar.setExpanding(False)
+    tab_bar.setLayoutDirection(Qt.LeftToRight)
+
+    
     tab_widget.setStyleSheet(f"""
-        QTabBar {{
-            alignment: left;
-        }}
-                             
+         
         QTabWidget::pane {{
             border: none;
             background-color: {COLORS['EDITOR_BG']};
