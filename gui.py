@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QWidget, QApplication, QMainWindow, QFileDialog,
                             QShortcut, QInputDialog, QPushButton,
                             QTableWidget, QTableWidgetItem, QHeaderView, QLabel,
                             QMenu, QTabWidget, QAction, QFrame)
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, QSize, pyqtSignal
 from src.lexer import tokenizer
 from src.parser.parser import Parser
 from src.interpreter.runtime import SymbolTable, Context
@@ -138,16 +138,102 @@ class InteractiveConsole(QTextEdit):
     
     def get_input(self):
         """Get input from queue (blocking but processes events)"""
-        # Request input (signal will trigger on main thread)
+        # request input (signal will trigger on main thread)
         self.request_input()
         
-        # Wait for input with event processing
+        # wait for input with event processing
         while self.input_queue.empty():
             QApplication.processEvents()
             import time
             time.sleep(0.01)  # Small sleep to prevent busy waiting
         
         return self.input_queue.get()
+
+class InterpreterWorker(QThread):
+    """Worker thread for running interpreter without blocking GUI"""
+    output_ready = pyqtSignal(str, str)  # text, color
+    update_tokens = pyqtSignal(list)  # token list
+    update_symbols = pyqtSignal(object)  # symbol table object
+    finished = pyqtSignal()
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, content, console_widget):
+        super().__init__()
+        self.content = content
+        self.console_widget = console_widget
+        self.tokens = None
+        self.symbol_table_obj = None
+    
+    def run(self):
+        """Runs in worker thread"""
+        try:
+            # tokenization
+            self.output_ready.emit("=== LOLCODE INTERPRETER ===", "#4ECDC4")
+            self.tokens = tokenizer.tokenize(self.content)
+            self.output_ready.emit(f"Tokenization complete: {len(self.tokens)} tokens", "#95E1D3")
+            self.update_tokens.emit(self.tokens)
+            
+            # parsing
+            parser = Parser(self.tokens)
+            AST = parser.parse()
+            
+            if AST.error:
+                error_msg = AST.error.as_string() if hasattr(AST.error, 'as_string') else str(AST.error)
+                self.output_ready.emit(f"Parse Error: {error_msg}", "#FF6B6B")
+                return
+            
+            self.output_ready.emit("Parsing complete", "#95E1D3")
+            
+            # interpretation
+            self.symbol_table_obj = SymbolTable()
+            context = Context('<program>')
+            context.symbol_table = self.symbol_table_obj
+            
+            lolcode_interpreter = Interpreter()
+            self.output_ready.emit("--- Program Output ---", "#4ECDC4")
+            
+            # custom print function that writes to console
+            import builtins
+            original_print = builtins.print
+            original_input = builtins.input
+            
+            def console_print(*args, **kwargs):
+                """Custom print that writes to console widget"""
+                text = ' '.join(str(arg) for arg in args)
+                end = kwargs.get('end', '\n')
+                if end == '\n':
+                    self.output_ready.emit(text, "#FAFAFA")
+                else:
+                    # For no newline, emit special signal or handle differently
+                    self.output_ready.emit(text, "#FAFAFA")
+            
+            # replace print and input
+            builtins.print = console_print
+            builtins.input = lambda: self.console_widget.get_input()
+            
+            try:
+                result = lolcode_interpreter.visit(AST.node, context)
+            finally:
+                # restore original functions
+                builtins.print = original_print
+                builtins.input = original_input
+            
+            # check for runtime errors
+            if result and result.error:
+                error_msg = result.error.as_string() if hasattr(result.error, 'as_string') else str(result.error)
+                self.output_ready.emit(error_msg, "#FF6B6B")
+            else:
+                self.output_ready.emit("\n=== Execution complete ===", "#95E1D3")
+            
+            # emit signal to update symbol table
+            self.update_symbols.emit(self.symbol_table_obj)
+            
+        except Exception as e:
+            self.output_ready.emit(f"Error: {str(e)}", "#FF6B6B")
+            import traceback
+            self.output_ready.emit(traceback.format_exc(), "#FF6B6B")
+        finally:
+            self.finished.emit()
 
 # Helper function to reset zoom
 def reset_zoom(text_input, default_size, global_font):
@@ -360,100 +446,39 @@ def execute_code(tab_widget, lexeme_manager, token_table, symbol_table, console_
     # get current tab's content manager
     current_index = tab_widget.currentIndex()
     if current_index == -1:
-        console_widget.write("Error: No file open", "#FF6B6B")
+        console_widget.write("Error: No file open", "#FF6B6B") # error handling
         return
     
     current_tab = tab_widget.widget(current_index)
     content_manager = current_tab.property("content_manager")
     
     if content_manager.saved_content is None:
-        console_widget.write("Error: Please save the file first (Ctrl+S)", "#FF6B6B")
+        console_widget.write("Error: Please save the file first (Ctrl+S)", "#FF6B6B") # error handling
         return
     
-    def run_interpreter():
-        """Run interpreter - output and input are sequential in the console"""
-        try:  
-            # Tokenization
-            console_widget.write("=== LOLCODE INTERPRETER ===", "#4ECDC4")
-            tokens = tokenizer.tokenize(content_manager.saved_content)
-            lexeme_manager.saved_lexemes = tokens
-            console_widget.write(f"Tokenization complete: {len(tokens)} tokens", "#95E1D3")
-            update_token_view(token_table, tokens)
-            
-            # Parsing
-            parser = Parser(tokens)
-            AST = parser.parse()
-            
-            if AST.error:
-                console_widget.write(f"Parse Error: {AST.error.as_string()}", "#FF6B6B")
-                return
-            
-            console_widget.write("Parsing complete", "#95E1D3")
-            
-            # Interpretation
-            symbol_table_obj = SymbolTable()
-            context = Context('<program>')
-            context.symbol_table = symbol_table_obj
-            
-            lolcode_interpreter = Interpreter()
-            console_widget.write("--- Program Output ---", "#4ECDC4")
-            
-            # Custom print function that writes to console
-            import builtins
-            original_print = builtins.print
-            original_input = builtins.input
-            
-            def console_print(*args, **kwargs):
-                """Custom print that writes to console widget"""
-                text = ' '.join(str(arg) for arg in args)
-                # Handle special case where text might have no newline
-                end = kwargs.get('end', '\n')
-                if end == '\n':
-                    console_widget.write(text, "#FAFAFA")
-                else:
-                    # Write without newline
-                    cursor = console_widget.textCursor()
-                    cursor.movePosition(QTextCursor.End)
-                    format = QTextCharFormat()
-                    format.setForeground(QColor("#FAFAFA"))
-                    cursor.setCharFormat(format)
-                    cursor.insertText(text)
-                    console_widget.setTextCursor(cursor)
-                    console_widget.ensureCursorVisible()
-            
-            # Replace print and input
-            builtins.print = console_print
-            builtins.input = lambda: console_widget.get_input()
-            
-            try:
-                result = lolcode_interpreter.visit(AST.node, context)
-            finally:
-                # Restore original functions
-                builtins.print = original_print
-                builtins.input = original_input
-            
-            # Check for runtime errors
-            if result and result.error:
-                error_msg = result.error.as_string() if hasattr(result.error, 'as_string') else str(result.error)
-                console_widget.write(error_msg, "#FF6B6B")
-            else:
-                console_widget.write("\n=== Execution complete ===", "#95E1D3")
-            
-            # Update symbol table display
-            update_symbol_table(symbol_table, symbol_table_obj)
-
-        except Exception as e:
-            console_widget.write(f"Error: {str(e)}", "#FF6B6B")
-            import traceback
-            console_widget.write(traceback.format_exc(), "#FF6B6B")
-    
-    # Clear console and start execution in a thread
+   
+    # clear console 
     console_widget.clear()
-    
-    # Run in separate thread to prevent GUI blocking
-    thread = threading.Thread(target=run_interpreter, daemon=True)
-    thread.start()
 
+    #--FIXED: calling widget methods from non-GUI thread--#
+    worker = InterpreterWorker(content_manager.saved_content, console_widget)   # create worker thread  
+   
+    # connect signals
+    worker.output_ready.connect(lambda text, color: console_widget.write(text, color))
+    worker.update_tokens.connect(lambda tokens: update_token_view(token_table, tokens))
+    worker.update_symbols.connect(lambda sym_table: update_symbol_table(symbol_table, sym_table))
+    worker.finished.connect(lambda: console_widget.write("=== Interpreter Finished ===", "#95E1D3"))
+
+    # store worker reference to prevent garbage collection
+    if not hasattr(tab_widget, 'workers'):
+        tab_widget.workers = []
+    tab_widget.workers.append(worker)
+    worker.finished.connect(lambda: tab_widget.workers.remove(worker))
+    
+    # start worker
+    worker.start()
+    
+   
 
 def create_table(parent_widget, label1, label2, global_font): # Func for creating tables
     token_layout = QVBoxLayout()
@@ -1003,5 +1028,5 @@ def main(): # Main Function
 
     sys.exit(app.exec_())
 
-
+#--- RUN MAIN FUNCTION ----
 main()
