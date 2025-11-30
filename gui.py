@@ -1,6 +1,6 @@
 """
 File Structure:
-    main.py       - Main application and UI layout
+    gui.py       - Main application and UI layout
     widgets.py    - Custom widget classes
     utils.py      - Utility functions and managers
 """
