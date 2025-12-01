@@ -19,7 +19,12 @@ pip install PyQt5
 ```bash
 python gui.py
 ```
-# Special Characters
+## Development Notes
+- macOS may show UI differences due to native styling.
+- The interpreter is fully built into this repository.
+- The UI relies solely on PyQT5.
+
+## Special Characters
 Below are the following special characters implemented in this interpreter, along with their equivalent values. The mapping was sourced from this [Special Character Documentation](https://homepage.mi-ras.ru/~sk/lehre/fivt2013/Lolcode_spec1.2.html).
 
 - **:)** -> Newline (\n)
@@ -28,7 +33,7 @@ Below are the following special characters implemented in this interpreter, alon
 - **:"** -> Literal Quote (")
 - **::** -> Literal Colon (:)
 
-# Line Continuation
+## Line Continuation
 Multiple lines can be combined into a single command by using an ellipsis at the end of a line:
 - **...** (three periods)
 - **…** (unicode ellipsis character U+2026)
@@ -39,9 +44,11 @@ I HAS A x ITZ ...
 SUM OF 5 AN 10
 ```
 
-# Soft Command Break
+## Soft Command Break
 Multiple commands can be placed on a single line when separated by a comma:
 ```lolcode
 I HAS A x ITZ 5, I HAS A y ITZ 10, VISIBLE x
 ```
+
+
 
