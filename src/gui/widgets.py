@@ -90,7 +90,7 @@ class InteractiveConsole(QTextEdit):
         super().clear()
         self.waiting_for_input = False
     
-    def _request_input_slot(self):
+    def _request_input_slot(self): # flag once toggled, toggle waiting for input
         """Enable input mode (must be called from main thread)"""
         self.waiting_for_input = True
         self.input_start_pos = self.textCursor().position()

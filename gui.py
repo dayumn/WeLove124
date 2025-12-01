@@ -3,6 +3,16 @@ File Structure:
     gui.py       - Main application and UI layout
     widgets.py    - Custom widget classes
     utils.py      - Utility functions and managers
+
+Code Structure:
+    - GUI Setup and Layout
+    - Table Widget Creation
+    - File Operations (Open, Save)
+    - Tab Management
+    - Code Execution
+    - Main Application Entry Point
+
+
 """
 
 import os
@@ -174,8 +184,7 @@ def save_current_tab(tab_widget, parent_window):
 # TAB MANAGEMENT
 # ============================================================================
 
-def create_text_editor(parent_widget, file_manager, content_manager, 
-                      parent_window, font_family):
+def create_text_editor(parent_widget, file_manager, content_manager, parent_window, font_family):
     """Create text editor with all functionality"""
     layout = QVBoxLayout()
     parent_widget.setLayout(layout)
@@ -252,18 +261,18 @@ def create_new_tab(tab_widget, parent_window, font_family, file_name=None, conte
     text_editor = QWidget()
     text_editor.setStyleSheet(f"background-color: {COLORS['EDITOR_BG']}; border: none; padding: 20px;")
     
-    # Create text input
-    text_input = create_text_editor(
-        text_editor, file_manager, content_manager, 
-        parent_window, font_family
-    )
-    
-    # Load content if provided
+     # Load content if provided
     if content:
         text_input.setPlainText(content)
         content_manager.saved_content = content
     if file_name:
         file_manager.file_name = file_name
+
+    # Create text input
+    text_input = create_text_editor(
+        text_editor, file_manager, content_manager, 
+        parent_window, font_family
+    )
     
     # Store properties
     text_editor.setProperty("file_manager", file_manager)
@@ -306,7 +315,7 @@ def create_new_tab(tab_widget, parent_window, font_family, file_name=None, conte
 # CODE EXECUTION
 # ============================================================================
 
-def execute_code(tab_widget, lexeme_manager, token_table, 
+def execute_code(tab_widget, token_table, 
                 symbol_table, console_widget):
     """Execute LOLCODE in current tab"""
     current_idx = tab_widget.currentIndex()
