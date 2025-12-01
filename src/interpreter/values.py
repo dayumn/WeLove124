@@ -88,28 +88,32 @@ class Value:
     return Number(result).set_context(self.context), None
 
   def maximum(self, other):
-    # Typecast both operands to Number before performing the division
-    self, error = self.typecast(Number)
-    if error: return None, error
-
-    other, error = other.typecast(Number)
-    if error: return None, error
-
-    result = max(self.value, other.value)
-
-    return Number(result).set_context(self.context) , None
+    # BIGGR OF is a math operator that performs implicit typecasting
+    # Try to cast both operands to Number
+    self_num, error1 = self.typecast(Number)
+    if error1:
+      return None, error1
+    
+    other_num, error2 = other.typecast(Number)
+    if error2:
+      return None, error2
+    
+    result = max(self_num.value, other_num.value)
+    return Number(result).set_context(self.context), None
 
   def minimum(self, other):
-    # Typecast both operands to Number before performing the division
-    self, error = self.typecast(Number)
-    if error: return None, error
-
-    other, error = other.typecast(Number)
-    if error: return None, error
-
-    result = min(self.value, other.value)
-
-    return Number(result).set_context(self.context) , None
+    # SMALLR OF is a math operator that performs implicit typecasting
+    # Try to cast both operands to Number
+    self_num, error1 = self.typecast(Number)
+    if error1:
+      return None, error1
+    
+    other_num, error2 = other.typecast(Number)
+    if error2:
+      return None, error2
+    
+    result = min(self_num.value, other_num.value)
+    return Number(result).set_context(self.context), None
   
   
   # Boolean Logical Operations
@@ -161,32 +165,26 @@ class Value:
   
   # Comparison
   def is_equal(self, other, operation_token=None):
-    # Only numeric comparisons are allowed
-    if self.__class__ == Number and other.__class__ == Number:
-      # Both are numeric types, compare values directly
-      result = self.value == other.value
-      return Boolean(result).set_context(self.context), None
+    # BOTH SAEM: comparison operators only work on NUMBR and NUMBAR
+    if self.__class__ != Number or other.__class__ != Number:
+      return None, RuntimeError(
+        ('Comparison Error', None, self.line_number, None),
+        f"BOTH SAEM only works with numeric types (NUMBR or NUMBAR).\nGot {self.__class__.__name__} and {other.__class__.__name__}."
+      )
     
-    # Non-numeric types cannot be compared
-    # Use operation token's line number if available, otherwise fall back to self.line_number
-    return None, RuntimeError(
-      ('Comparison Error', None, operation_token['line'] if operation_token else self.line_number, operation_token),
-      f"Cannot compare non-numeric types. Only NUMBR and NUMBAR can be compared.\nConvert {self.__class__.__name__} and {other.__class__.__name__} to numbers first using explicit typecasting."
-    )
+    result = self.value == other.value
+    return Boolean(result).set_context(self.context) , None
 
   def is_not_equal(self, other, operation_token=None):
-    # Only numeric comparisons are allowed
-    if self.__class__ == Number and other.__class__ == Number:
-      # Both are numeric types, compare values directly
-      result = self.value != other.value
-      return Boolean(result).set_context(self.context), None
+    # DIFFRINT: comparison operators only work on NUMBR and NUMBAR
+    if self.__class__ != Number or other.__class__ != Number:
+      return None, RuntimeError(
+        ('Comparison Error', None, self.line_number, None),
+        f"DIFFRINT only works with numeric types (NUMBR or NUMBAR).\nGot {self.__class__.__name__} and {other.__class__.__name__}."
+      )
     
-    # Non-numeric types cannot be compared
-    # Use operation token's line number if available, otherwise fall back to self.line_number
-    return None, RuntimeError(
-      ('Comparison Error', None, operation_token['line'] if operation_token else self.line_number, operation_token),
-      f"Cannot compare non-numeric types. Only NUMBR and NUMBAR can be compared.\nConvert {self.__class__.__name__} and {other.__class__.__name__} to numbers first using explicit typecasting."
-    )
+    result = self.value != other.value
+    return Boolean(result).set_context(self.context) , None
 
   def __repr__(self):
     return str(self.value)  
@@ -542,9 +540,10 @@ class Function(Value):
       if isinstance(value, Break):
         return res.success(Noob())
       
-      # Update return_value to the last expression result (ignoring None)
+      # Update IT and return_value to the last expression result (ignoring None)
       if value is not None and not isinstance(value, (Break, Return)):
         return_value = value
+        new_context.symbol_table.set('IT', value)  # Set IT variable for O RLY? and other statements
 
     return res.success(return_value)
 
@@ -553,4 +552,99 @@ class Function(Value):
 
   def __repr__(self):
     return f"<function {self.function_name}>"
+
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════
+class Array(Value):
+  def __init__(self, element_type, size, line_number=None):
+    self.element_type = element_type  # 'NUMBR', 'NUMBAR', 'YARN', 'TROOF'
+    self.size = size
+    self.elements = [Noob() for _ in range(size)]  # Initialize with NOOB values
+    self.line_number = line_number
+    super().__init__(line_number)
+
+  def get(self, index):
+    """Get element at index"""
+    if not isinstance(index, int):
+      return None, RuntimeError(
+        ('Array Error', None, self.line_number, None),
+        f"Array index must be an integer (NUMBR), got {type(index).__name__}"
+      )
+    
+    if index < 0 or index >= self.size:
+      return None, RuntimeError(
+        ('Array Error', None, self.line_number, None),
+        f"Array index {index} out of bounds. Array size is {self.size} (valid indices: 0 to {self.size-1})"
+      )
+    
+    return self.elements[index], None
+
+  def set(self, index, value):
+    """Set element at index (CONFINE operation)"""
+    if not isinstance(index, int):
+      return None, RuntimeError(
+        ('Array Error', None, self.line_number, None),
+        f"Array index must be an integer (NUMBR), got {type(index).__name__}"
+      )
+    
+    if index < 0 or index >= self.size:
+      return None, RuntimeError(
+        ('Array Error', None, self.line_number, None),
+        f"Array index {index} out of bounds. Array size is {self.size} (valid indices: 0 to {self.size-1})"
+      )
+    
+    # Type check the value being added
+    type_match = False
+    if self.element_type == 'NUMBR' and isinstance(value, Number) and Number.is_integer(value.value):
+      type_match = True
+    elif self.element_type == 'NUMBAR' and isinstance(value, Number):
+      type_match = True
+    elif self.element_type == 'YARN' and isinstance(value, String):
+      type_match = True
+    elif self.element_type == 'TROOF' and isinstance(value, Boolean):
+      type_match = True
+    
+    if not type_match:
+      return None, RuntimeError(
+        ('Array Type Error', None, self.line_number, None),
+        f"Cannot add {value.__class__.__name__} to array of type {self.element_type}"
+      )
+    
+    self.elements[index] = value
+    return value, None
+
+  def remove(self, index):
+    """Remove element at index (DISCHARGE operation) - sets to NOOB"""
+    if not isinstance(index, int):
+      return None, RuntimeError(
+        ('Array Error', None, self.line_number, None),
+        f"Array index must be an integer (NUMBR), got {type(index).__name__}"
+      )
+    
+    if index < 0 or index >= self.size:
+      return None, RuntimeError(
+        ('Array Error', None, self.line_number, None),
+        f"Array index {index} out of bounds. Array size is {self.size} (valid indices: 0 to {self.size-1})"
+      )
+    
+    removed_value = self.elements[index]
+    self.elements[index] = Noob()  # Reset to NOOB
+    return removed_value, None
+
+  def typecast(self, target_class):
+    # Arrays cannot be typecast
+    return None, RuntimeError(
+      ('Typecast Error', None, self.line_number),
+      f"Cannot convert Array to {target_class.__name__}"
+    )
+
+  def explicit_typecast(self, target_class, to_float=False):
+    # Arrays cannot be explicitly typecast
+    return None, RuntimeError(
+      ('Typecast Error', None, self.line_number),
+      f"Cannot convert Array to {target_class.__name__}"
+    )
+
+  def __repr__(self):
+    return f"Array[{self.element_type}]({self.size})"
   

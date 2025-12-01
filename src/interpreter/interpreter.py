@@ -250,7 +250,11 @@ class Interpreter:
       if res.error: return res
       print_value += str(operand_value)
     
-    print(print_value)
+    # Print with or without newline based on suppress_newline flag
+    if node.suppress_newline:
+      print(print_value, end='')
+    else:
+      print(print_value)
 
     # VISIBLE does not update IT variable, so return None
     return res.success(None)
@@ -325,6 +329,9 @@ class Interpreter:
       for statement in node.if_block_statements:
         statement_value = res.register(self.visit(statement, context))
         if res.error: return res
+        # Check for early return or break
+        if isinstance(statement_value, (Return, Break)):
+          return res.success(statement_value)
     else:
       # Check MEBBE (else if) conditions in order
       mebbe_executed = False
@@ -342,6 +349,9 @@ class Interpreter:
           for statement in mebbe_statements:
             statement_value = res.register(self.visit(statement, context))
             if res.error: return res
+            # Check for early return or break
+            if isinstance(statement_value, (Return, Break)):
+              return res.success(statement_value)
           mebbe_executed = True
           break
       
@@ -350,6 +360,9 @@ class Interpreter:
         for statement in node.else_block_statements:
           statement_value = res.register(self.visit(statement, context))
           if res.error: return res
+          # Check for early return or break
+          if isinstance(statement_value, (Return, Break)):
+            return res.success(statement_value)
 
     return res.success(basis)
   
@@ -368,7 +381,7 @@ class Interpreter:
     var_name = variable['value']
     
     # Validate that the loop variable exists before starting the loop
-    if not context.symbol_table.exists(var_name):
+    if not context.symbol_table.found(var_name):
       return res.failure(RuntimeError(
         variable,
         f"Loop variable '{var_name}' must be declared before the loop",
@@ -406,6 +419,10 @@ class Interpreter:
       for statement in body_statements:
         statement_value = res.register(self.visit(statement, context))
         if res.error: return res
+
+        # Update IT with the statement result (same as StatementListNode)
+        if statement_value is not None and not isinstance(statement_value, (Break, Return)):
+          context.symbol_table.set('IT', statement_value)
 
         if isinstance(statement_value, Break):
           is_running = False
@@ -478,6 +495,181 @@ class Interpreter:
     if res.error: return res
     
     return res.success(return_value if return_value is not None else Noob())
+
+  # ───────────────────────────────────────────────────────────────────────────────────────────────
+  def visit_ArrayDeclarationNode(self, node, context):
+    res = RTResult()
+    var_name = node.array_name_token['value']
+    element_type = node.element_type
+    
+    # Evaluate size expression
+    size_value = res.register(self.visit(node.size_expr, context))
+    if res.error: return res
+    
+    # Typecast size to Number if needed
+    size_number, error = size_value.typecast(Number)
+    if error: return res.failure(error)
+    
+    # Check that size is a positive integer
+    if not Number.is_integer(size_number.value) or size_number.value <= 0:
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array size must be a positive integer. Got {size_number.value}",
+        self.filename
+      ))
+    
+    size = int(size_number.value)
+    
+    # Create the array
+    array = Array(element_type, size, node.array_name_token['line'])
+    array.set_context(context)
+    
+    # Store in symbol table
+    context.symbol_table.set(var_name, array)
+    
+    return res.success(array)
+
+  # ───────────────────────────────────────────────────────────────────────────────────────────────
+  def visit_ArrayAccessNode(self, node, context):
+    res = RTResult()
+    array_name = node.array_name_token['value']
+    
+    # Get the array from symbol table
+    array = context.symbol_table.get(array_name)
+    if array is None:
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array '{array_name}' is not defined",
+        self.filename
+      ))
+    
+    # Check if it's actually an array
+    if not isinstance(array, Array):
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"'{array_name}' is not an array",
+        self.filename
+      ))
+    
+    # Evaluate index expression
+    index_value = res.register(self.visit(node.index_expr, context))
+    if res.error: return res
+    
+    # Typecast index to Number
+    index_number, error = index_value.typecast(Number)
+    if error: return res.failure(error)
+    
+    # Check that index is an integer
+    if not Number.is_integer(index_number.value):
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array index must be an integer. Got {index_number.value}",
+        self.filename
+      ))
+    
+    index = int(index_number.value)
+    
+    # Get element from array
+    element, error = array.get(index)
+    if error: return res.failure(error)
+    
+    return res.success(element)
+
+  # ───────────────────────────────────────────────────────────────────────────────────────────────
+  def visit_ArrayConfineNode(self, node, context):
+    res = RTResult()
+    array_name = node.array_name_token['value']
+    
+    # Get the array from symbol table
+    array = context.symbol_table.get(array_name)
+    if array is None:
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array '{array_name}' is not defined",
+        self.filename
+      ))
+    
+    # Check if it's actually an array
+    if not isinstance(array, Array):
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"'{array_name}' is not an array",
+        self.filename
+      ))
+    
+    # Evaluate value expression
+    value = res.register(self.visit(node.value_expr, context))
+    if res.error: return res
+    
+    # Evaluate index expression
+    index_value = res.register(self.visit(node.index_expr, context))
+    if res.error: return res
+    
+    # Typecast index to Number
+    index_number, error = index_value.typecast(Number)
+    if error: return res.failure(error)
+    
+    # Check that index is an integer
+    if not Number.is_integer(index_number.value):
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array index must be an integer. Got {index_number.value}",
+        self.filename
+      ))
+    
+    index = int(index_number.value)
+    
+    # Set element in array (CONFINE operation)
+    result, error = array.set(index, value)
+    if error: return res.failure(error)
+    
+    return res.success(result)
+
+  # ───────────────────────────────────────────────────────────────────────────────────────────────
+  def visit_ArrayDischargeNode(self, node, context):
+    res = RTResult()
+    array_name = node.array_name_token['value']
+    
+    # Get the array from symbol table
+    array = context.symbol_table.get(array_name)
+    if array is None:
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array '{array_name}' is not defined",
+        self.filename
+      ))
+    
+    # Check if it's actually an array
+    if not isinstance(array, Array):
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"'{array_name}' is not an array",
+        self.filename
+      ))
+    
+    # Evaluate index expression
+    index_value = res.register(self.visit(node.index_expr, context))
+    if res.error: return res
+    
+    # Typecast index to Number
+    index_number, error = index_value.typecast(Number)
+    if error: return res.failure(error)
+    
+    # Check that index is an integer
+    if not Number.is_integer(index_number.value):
+      return res.failure(RuntimeError(
+        node.array_name_token,
+        f"Array index must be an integer. Got {index_number.value}",
+        self.filename
+      ))
+    
+    index = int(index_number.value)
+    
+    # Remove element from array (DISCHARGE operation)
+    removed_value, error = array.remove(index)
+    if error: return res.failure(error)
+    
+    return res.success(removed_value)
 
   # ───────────────────────────────────────────────────────────────────────────────────────────────
   def visit_InputNode(self, node, context):

@@ -13,6 +13,7 @@ HAI
 	VISIBLE "Choice: "
 	GIMMEH choice
 
+	choice R MAEK choice A NUMBR
 	BOTH SAEM choice AN 1
 	O RLY?
 		YA RLY

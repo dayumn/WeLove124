@@ -13,7 +13,7 @@ HAI
 	VISIBLE "Choice: "
 	GIMMEH choice
 
-	choice
+	MAEK choice A NUMBAR
 	WTF?
 		OMG 1
 			VISIBLE "Enter birth year: "

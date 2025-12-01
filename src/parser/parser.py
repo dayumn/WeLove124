@@ -170,11 +170,12 @@ class VarDecListNode:
     return f"VarDecListNode({self.variable_declarations})"
 
 class PrintNode:
-  def __init__(self, operands):
+  def __init__(self, operands, suppress_newline=False):
     self.operands = operands
+    self.suppress_newline = suppress_newline
 
   def __repr__(self):
-    return f"PrintNode({self.operands})"
+    return f"PrintNode({self.operands}, suppress_newline={self.suppress_newline})"
 
 class TypecastNode:
   def __init__(self, source_value, desired_type):
@@ -264,12 +265,13 @@ class ProgramNode:
 # Array Implementation
 
 class ArrayDeclarationNode:
-  def __init__(self, array_name_token, size_expr):
+  def __init__(self, array_name_token, element_type, size_expr):
     self.array_name_token = array_name_token
+    self.element_type = element_type  # 'NUMBR', 'NUMBAR', 'YARN', 'TROOF'
     self.size_expr = size_expr
 
   def __repr__(self):
-    return f"ArrayDecl({self.array_name_token['value']}, size={self.size_expr})"
+    return f"ArrayDecl({self.array_name_token['value']}, type={self.element_type}, size={self.size_expr})"
 
 class ArrayAccessNode:
   def __init__(self, array_name_token, index_expr):
@@ -487,6 +489,18 @@ class Parser:
     while self.current_token and self.current_token['type'] == TokenType.NEWLINE:
       self.advance()
     
+    # Parse function definitions before HAI
+    while self.current_token and self.current_token['type'] == TokenType.HOW_IZ_I:
+      func_def = res.register(self.function_definition())
+      if func_def is None:
+        self.pop_context()
+        return res  # Has error
+      sections.append(func_def)
+      
+      # Skip newlines after function definition
+      while self.current_token and self.current_token['type'] == TokenType.NEWLINE:
+        self.advance()
+    
     start = self.current_token if self.current_token else {'value':'<START>','line':1,'type':'<START>','category':'Start'}
     if (self.current_token['type'] != TokenType.HAI):
       self.pop_context()
@@ -521,6 +535,44 @@ class Parser:
       self.pop_context()
       return res               # Check if there's an error
     sections.append(list_of_statements)                     # No error
+
+    # Parse function definitions after KTHXBYE
+    # Skip newlines after KTHXBYE
+    while (self.token_index < len(self.tokens) and 
+           self.current_token and 
+           self.current_token['type'] == TokenType.NEWLINE):
+      self.advance()
+    
+    # Collect functions defined after KTHXBYE
+    functions_after = []
+    while (self.token_index < len(self.tokens) and
+           self.current_token and 
+           self.current_token['type'] == TokenType.HOW_IZ_I):
+      func_def = res.register(self.function_definition())
+      if func_def is None:
+        self.pop_context()
+        return res  # Has error
+      functions_after.append(func_def)
+      
+      # Skip newlines after function definition
+      while (self.token_index < len(self.tokens) and
+             self.current_token and 
+             self.current_token['type'] == TokenType.NEWLINE):
+        self.advance()
+    
+    # Add functions defined after KTHXBYE to the beginning (after functions before HAI)
+    # so they're defined before the main code executes
+    # Count how many function definitions are at the start
+    func_count_before = 0
+    for section in sections:
+      if isinstance(section, FuncDefNode):
+        func_count_before += 1
+      else:
+        break
+    
+    # Insert functions after KTHXBYE right after functions before HAI
+    for i, func in enumerate(functions_after):
+      sections.insert(func_count_before + i, func)
 
     self.pop_context()
     return res.success(ProgramNode(sections))
@@ -584,30 +636,39 @@ class Parser:
       itz_token = self.current_token
       self.advance() # eats ITZ
 
-      # Check for array declaration: ITZ A UHS OF <size_expr>
+      # Check for array declaration: ITZ A <TYPE> UHS OF <size_expr>
       if self.current_token['type'] == TokenType.A:
         next_token = self.peek()
-        if next_token and next_token['type'] == TokenType.UHS:
+        # Check if this is a typed array declaration
+        if next_token and next_token['type'] in (TokenType.NUMBR, TokenType.NUMBAR, TokenType.YARN, TokenType.TROOF):
           self.advance() # Eat A
+          
+          # Get the element type
+          if self.current_token['type'] not in (TokenType.NUMBR, TokenType.NUMBAR, TokenType.YARN, TokenType.TROOF):
+            return res.failure(self.syntax_error(self.current_token, 'type (NUMBR, NUMBAR, YARN, or TROOF)', self.current_token['value'], category='Array Declaration', context_kind='array_decl'))
+          
+          element_type = self.current_token['value']  # Store the type as string
+          self.advance() # Eat type
+          
+          # Expect UHS
+          if self.current_token['type'] != TokenType.UHS:
+            return res.failure(self.syntax_error(self.current_token, 'UHS', self.current_token['value'], category='Array Declaration', context_kind='array_decl'))
+          
           self.advance() # Eat UHS
           
+          # Expect OF
           if self.current_token['type'] != TokenType.OF:
             return res.failure(self.syntax_error(self.current_token, 'OF', self.current_token['value'], category='Array Declaration', context_kind='array_decl'))
           
           self.advance() # Eat OF
           
-          # Parse size expression (can be integer literal or variable)
-          size_expr = None
-          if self.current_token['type'] == TokenType.INTEGER:
-            size_expr = res.register(self.arithmetic_literal())
-          elif self.current_token['type'] == TokenType.IDENTIFIER:
-            size_expr = res.register(self.variable_literal())
-          else:
-            return res.failure(self.syntax_error(self.current_token, 'INTEGER or IDENTIFIER', self.current_token['value'], category='Array Size', context_kind='array_decl'))
-          
+          # Parse size expression (can be integer literal, variable, or arithmetic expression)
+          size_expr = res.register(self.arithmetic_expression())
           if res.error: return res
+          if size_expr is None:
+            return res.failure(self.syntax_error(self.current_token, 'size expression', self.current_token['value'], category='Array Size', context_kind='array_decl'))
           
-          return res.success(ArrayDeclarationNode(var_name_token, size_expr))
+          return res.success(ArrayDeclarationNode(var_name_token, element_type, size_expr))
 
       # Regular variable declaration
       expression = res.register(self.expression())
@@ -668,6 +729,7 @@ class Parser:
     if (self.current_token['type'] != TokenType.KTHXBYE):
       return res.failure(self.syntax_error(self.current_token, 'KTHXBYE', self.current_token['value'], category='Code Delimiter', context_kind='program_body'))
 
+    self.advance()  # Eat KTHXBYE
     return res.success(StatementListNode(statements))
 
   def statement(self):
@@ -732,6 +794,12 @@ class Parser:
 
     # Try break statement (GTFO)
     res.node = res.register(self.break_statement())
+    if res.error or res.node:
+      self.pop_context()
+      return res
+
+    # Try return statement (FOUND YR)
+    res.node = res.register(self.return_statement())
     if res.error or res.node:
       self.pop_context()
       return res
@@ -1239,8 +1307,15 @@ class Parser:
       operands.append(first_operand)
 
       # Continue while there's a + or AN separator
+      suppress_newline = False
       while self.current_token['type'] in (TokenType.EXCLAMATION, TokenType.AN, TokenType.PLUS):
-        self.advance() # Eat '!', 'AN', or '+'
+        # Check if it's an exclamation mark (suppress newline)
+        if self.current_token['type'] == TokenType.EXCLAMATION:
+          suppress_newline = True
+          self.advance() # Eat '!'
+          break  # ! should be at the end, no more operands after it
+        
+        self.advance() # Eat 'AN' or '+'
 
         additional_operand = res.register(self.expression())
         if res.error:
@@ -1250,7 +1325,7 @@ class Parser:
 
       # Success
       self.pop_context()
-      return res.success(PrintNode(operands))
+      return res.success(PrintNode(operands, suppress_newline))
 
     self.pop_context()
     return res
@@ -1563,6 +1638,25 @@ class Parser:
 
       self.pop_context()
       return res.success(BreakNode(break_token))
+
+    self.pop_context()
+    return res
+
+# ═════════════════════════════════════════════════════════════════════════════════════════════════
+  def return_statement(self):
+    self.push_context('return_statement', 'FOUND YR <expr>')
+    res = ParseResult()
+
+    if self.current_token['type'] == TokenType.FOUND_YR:
+      self.advance() # Eat FOUND YR
+
+      return_expression = res.register(self.expression())
+      if return_expression is None:
+        self.pop_context()
+        return res  # Has error
+
+      self.pop_context()
+      return res.success(ReturnNode(return_expression))
 
     self.pop_context()
     return res

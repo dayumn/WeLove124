@@ -1,5 +1,5 @@
 BTW start of the program
-HAI!
+HAI
     WAZZUP
         BTW variable dec
         I HAS A monde

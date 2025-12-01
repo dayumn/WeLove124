@@ -9,6 +9,10 @@ HAI
     VISIBLE "Value 2: "
     GIMMEH y
 
+    BTW Typecast inputs to NUMBR first
+    x R MAEK x A NUMBR
+    y IS NOW A NUMBAR
+
     BTW x==y
     VISIBLE BOTH SAEM x AN y
     BTW x!=y

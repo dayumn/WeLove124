@@ -6,13 +6,13 @@ HAI
         I HAS A y
     BUHBYE
     
-    VISIBLE "Hello! Please enter two strings:"
-    VISIBLE "String 1: "
+    VISIBLE "Hello! Please enter two strings"
+    VISIBLE "String 1"
     GIMMEH x
-    VISIBLE "String 2: "
+    VISIBLE "String 2"
     GIMMEH y
 
-    VISIBLE SMOOSH x AN y
+    VISIBLE SMOOSH x AN y !
 
     VISIBLE SMOOSH x AN x AN x AN y AN y
 
@@ -25,6 +25,6 @@ HAI
     VISIBLE 10 AN y
 
     y R 0
-    y R MAEK A y TROOF
+    y R MAEK y A TROOF
     VISIBLE y
 KTHXBYE
