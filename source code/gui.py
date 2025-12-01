@@ -128,7 +128,8 @@ class InteractiveConsole(QTextEdit):
         fmt.setForeground(QColor(color))
         cursor.setCharFormat(fmt)
         
-        cursor.insertText(text + "\n")
+        # Don't add extra newline - text already has proper ending from console_print
+        cursor.insertText(text)
         self.setTextCursor(cursor)
         self.ensureCursorVisible()
     
@@ -234,7 +235,12 @@ class InterpreterWorker(QThread):
     
     def console_print(self, *args, **kwargs):
         """Custom print function that routes to console widget"""
-        text = ' '.join(str(arg) for arg in args)
+        # Handle separator and end parameters just like built-in print
+        sep = kwargs.get('sep', ' ')
+        end = kwargs.get('end', '\n')
+        text = sep.join(str(arg) for arg in args)
+        # Add the end character(s)
+        text = text + end
         self.output_ready.emit(text, COLORS['TEXT'])
     
     def stop(self):
@@ -246,20 +252,20 @@ class InterpreterWorker(QThread):
         """Execute interpreter pipeline in worker thread"""
         try:
             # tokenization
-            self.output_ready.emit("=== LOLCODE INTERPRETER ===", COLORS['INFO'])
+            self.output_ready.emit("=== LOLCODE INTERPRETER ===\n", COLORS['INFO'])
             
             try:
                 self.tokens = tokenizer.tokenize(self.content, filename=self.filename or '<stdin>')
             except Exception as e:
-                self.output_ready.emit(f"Tokenization Error: {str(e)}", COLORS['ERROR'])
+                self.output_ready.emit(f"Tokenization Error: {str(e)}\n", COLORS['ERROR'])
                 return
             
             if not self.tokens:
-                self.output_ready.emit("Error: No tokens generated", COLORS['ERROR'])
+                self.output_ready.emit("Error: No tokens generated\n", COLORS['ERROR'])
                 return
             
             self.output_ready.emit(
-                f"Tokenization complete: {len(self.tokens)} tokens", 
+                f"Tokenization complete: {len(self.tokens)} tokens\n", 
                 COLORS['SUCCESS']
             )
             self.update_tokens.emit(self.tokens)
@@ -272,18 +278,18 @@ class InterpreterWorker(QThread):
                 parser = Parser(self.tokens, filename=self.filename or '<stdin>')
                 ast = parser.parse()
             except Exception as e:
-                self.output_ready.emit(f"Parser Error: {str(e)}", COLORS['ERROR'])
+                self.output_ready.emit(f"Parser Error: {str(e)}\n", COLORS['ERROR'])
                 import traceback
-                self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
+                self.output_ready.emit(traceback.format_exc() + "\n", COLORS['ERROR'])
                 return
             
             if hasattr(ast, 'error') and ast.error:
                 error_msg = (ast.error.as_string() if hasattr(ast.error, 'as_string') 
                            else str(ast.error))
-                self.output_ready.emit(f"Parse Error: {error_msg}", COLORS['ERROR'])
+                self.output_ready.emit(f"Parse Error: {error_msg}\n", COLORS['ERROR'])
                 return
             
-            self.output_ready.emit("Parsing complete", COLORS['SUCCESS'])
+            self.output_ready.emit("Parsing complete\n", COLORS['SUCCESS'])
             
             if not self._is_running:
                 return
@@ -295,7 +301,7 @@ class InterpreterWorker(QThread):
                 context.symbol_table = self.symbol_table_obj
                 
                 interpreter = Interpreter(filename=self.filename or '<stdin>')
-                self.output_ready.emit("--- Program Output ---", COLORS['INFO'])
+                self.output_ready.emit("--- Program Output ---\n", COLORS['INFO'])
                 
                 # redirect I/O to console
                 original_print = builtins.print
@@ -307,9 +313,9 @@ class InterpreterWorker(QThread):
                 try:
                     result = interpreter.visit(ast.node, context)
                 except Exception as e:
-                    self.output_ready.emit(f"Runtime Error: {str(e)}", COLORS['ERROR'])
+                    self.output_ready.emit(f"Runtime Error: {str(e)}\n", COLORS['ERROR'])
                     import traceback
-                    self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
+                    self.output_ready.emit(traceback.format_exc() + "\n", COLORS['ERROR'])
                     return
                 finally:
                     builtins.print = original_print
@@ -319,24 +325,24 @@ class InterpreterWorker(QThread):
                 if result and hasattr(result, 'error') and result.error:
                     error_msg = (result.error.as_string() if hasattr(result.error, 'as_string')
                                else str(result.error))
-                    self.output_ready.emit(error_msg, COLORS['ERROR'])
+                    self.output_ready.emit(error_msg + "\n", COLORS['ERROR'])
                 else:
-                    self.output_ready.emit("\n=== Execution complete ===", COLORS['SUCCESS'])
+                    self.output_ready.emit("\n=== Execution complete ===\n", COLORS['SUCCESS'])
                 
                 # update symbol table
                 if self.symbol_table_obj:
                     self.update_symbols.emit(self.symbol_table_obj)
                     
             except Exception as e:
-                self.output_ready.emit(f"Interpretation Error: {str(e)}", COLORS['ERROR'])
+                self.output_ready.emit(f"Interpretation Error: {str(e)}\n", COLORS['ERROR'])
                 import traceback
-                self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
+                self.output_ready.emit(traceback.format_exc() + "\n", COLORS['ERROR'])
                 return
             
         except Exception as e:
-            self.output_ready.emit(f"Unexpected Error: {str(e)}", COLORS['ERROR'])
+            self.output_ready.emit(f"Unexpected Error: {str(e)}\n", COLORS['ERROR'])
             import traceback
-            self.output_ready.emit(traceback.format_exc(), COLORS['ERROR'])
+            self.output_ready.emit(traceback.format_exc() + "\n", COLORS['ERROR'])
         finally:
             self.finished.emit()
 

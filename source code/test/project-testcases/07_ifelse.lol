@@ -7,7 +7,7 @@ HAI
 	BTW if w/o MEBBE, 1 only, everything else is invalid
 	VISIBLE "1. Compute age"
 	VISIBLE "2. Compute tip"
-	VISIBLE "3. Compute square area"
+	VISIBLE "3. Compute square :> area"
 	VISIBLE "0. Exit"
 
 	VISIBLE "Choice: "
@@ -19,7 +19,7 @@ HAI
 		YA RLY
 			VISIBLE "Enter birth year: "
 			GIMMEH input
-			VISIBLE DIFF OF 2022 AN input
+			VISIBLE DIFF OF 2025 AN input
 
 	BTW uncomment this portion if you have MEBBE
 	BTW else, this portion should be ignored

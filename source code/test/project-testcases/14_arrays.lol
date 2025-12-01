@@ -8,7 +8,7 @@ HAI
         I HAS A index
     BUHBYE
     
-    VISIBLE "=== Testing Arrays (Bukkit) ==="
+    VISIBLE "=== Testing Arrays (UHS) ==="
     VISIBLE ""
     
     BTW Test 1: Array initialization with CONFINE
@@ -18,8 +18,7 @@ HAI
     CONFINE 30 IN numbers AT 2
     CONFINE 40 IN numbers AT 3
     CONFINE 50 IN numbers AT 4
-    VISIBLE "Array initialized with 5 elements"
-    VISIBLE ""
+    VISIBLE "Array initialized with 5 elements:)"
     
     BTW Test 2: Array element access
     VISIBLE "Test 2: Array access"

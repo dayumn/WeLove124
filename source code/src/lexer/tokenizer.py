@@ -335,6 +335,9 @@ CATEGORY_MAP = { # TokenType: Category Name
     # --- Misc operators / helpers ---
     TokenType.AN: "Multiple Parameter Separator",
 
+    # --- Statement Separator ---
+    TokenType.NEWLINE: "Statement Separator",
+
 }
 
 def tokenize(code, filename='<stdin>'):

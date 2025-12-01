@@ -1,0 +1,6 @@
+CMSC 124 - ST1L Final Project (LOLCode Interpreter)
+
+Contributors:
+Myko Jefferson M. Javier
+Justin Dayne Bryant L. Pena
+Franz S. Saragena
