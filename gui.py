@@ -1,18 +1,14 @@
 """
+LOLCODE IDE - Main Application
+Cross-platform interpreter and development environment
+
+Usage:
+    python main.py
+
 File Structure:
-    gui.py       - Main application and UI layout
+    main.py       - Main application and UI layout
     widgets.py    - Custom widget classes
     utils.py      - Utility functions and managers
-
-Code Structure:
-    - GUI Setup and Layout
-    - Table Widget Creation
-    - File Operations (Open, Save)
-    - Tab Management
-    - Code Execution
-    - Main Application Entry Point
-
-
 """
 
 import os
@@ -184,15 +180,10 @@ def save_current_tab(tab_widget, parent_window):
 # TAB MANAGEMENT
 # ============================================================================
 
-def create_text_editor(parent_widget, file_manager, content_manager, parent_window, font_family):
+def create_text_editor(parent_widget, file_manager, content_manager, 
+                      parent_window, font_family):
     """Create text editor with all functionality"""
-    layout = QVBoxLayout()
-    parent_widget.setLayout(layout)
-    parent_widget.setStyleSheet(
-        f"background-color: {COLORS['EDITOR_BG']}; border: none;"
-    )
-    
-    # Create code editor
+    # Create code editor first
     text_input = CodeEditor(font_family)
     text_input.setPlaceholderText("Type your LOLCODE here...")
     
@@ -201,7 +192,13 @@ def create_text_editor(parent_widget, file_manager, content_manager, parent_wind
     text_input.setFont(font)
     text_input.setStyleSheet(f"border: none; color: {COLORS['TEXT']};")
     
+    # Create layout and add editor
+    layout = QVBoxLayout()
     layout.addWidget(text_input)
+    parent_widget.setLayout(layout)
+    parent_widget.setStyleSheet(
+        f"background-color: {COLORS['EDITOR_BG']}; border: none;"
+    )
     
     # Setup keyboard shortcuts
     setup_editor_shortcuts(text_input, parent_window, font_family)
@@ -251,7 +248,8 @@ def setup_editor_shortcuts(text_input, parent_window, font_family):
     select_all_shortcut.activated.connect(text_input.selectAll)
 
 
-def create_new_tab(tab_widget, parent_window, font_family, file_name=None, content=None):
+def create_new_tab(tab_widget, parent_window, font_family, 
+                  file_name=None, content=None):
     """Create a new tab in the tab widget"""
     # Create managers
     file_manager = FileManager()
@@ -259,20 +257,22 @@ def create_new_tab(tab_widget, parent_window, font_family, file_name=None, conte
     
     # Create editor widget
     text_editor = QWidget()
-    text_editor.setStyleSheet(f"background-color: {COLORS['EDITOR_BG']}; border: none; padding: 20px;")
+    text_editor.setStyleSheet(
+        f"background-color: {COLORS['EDITOR_BG']}; border: none; padding: 20px;"
+    )
     
-     # Load content if provided
-    if content:
-        text_input.setPlainText(content)
-        content_manager.saved_content = content
-    if file_name:
-        file_manager.file_name = file_name
-
     # Create text input
     text_input = create_text_editor(
         text_editor, file_manager, content_manager, 
         parent_window, font_family
     )
+    
+    # Load content if provided
+    if content:
+        text_input.setPlainText(content)
+        content_manager.saved_content = content
+    if file_name:
+        file_manager.file_name = file_name
     
     # Store properties
     text_editor.setProperty("file_manager", file_manager)
@@ -284,27 +284,26 @@ def create_new_tab(tab_widget, parent_window, font_family, file_name=None, conte
     idx = tab_widget.addTab(text_editor, tab_name)
     
     # Create close button
-    if IS_MACOS != 1:
-        close_btn = QPushButton()
-        close_btn.setIcon(QIcon(str(BASE_DIR / 'src/assets/x.png')))
-        close_btn.setIconSize(QSize(16, 16))
-        close_btn.setFixedSize(16, 16)
-        close_btn.setFlat(True)
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: transparent;
-                border: none;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                background-color: rgba(200, 200, 200, 0.2);
-                border-radius: 2px;
-            }
-        """)
-        close_btn.clicked.connect(lambda: tab_widget.removeTab(idx))
-        tab_widget.tabBar().setTabButton(
-            idx, tab_widget.tabBar().RightSide, close_btn
-        )
+    close_btn = QPushButton()
+    close_btn.setIcon(QIcon(str(BASE_DIR / 'src/assets/x.png')))
+    close_btn.setIconSize(QSize(16, 16))
+    close_btn.setFixedSize(16, 16)
+    close_btn.setFlat(True)
+    close_btn.setStyleSheet("""
+        QPushButton {
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+        }
+        QPushButton:hover {
+            background-color: rgba(200, 200, 200, 0.2);
+            border-radius: 2px;
+        }
+    """)
+    close_btn.clicked.connect(lambda: tab_widget.removeTab(idx))
+    tab_widget.tabBar().setTabButton(
+        idx, tab_widget.tabBar().RightSide, close_btn
+    )
     
     tab_widget.setCurrentWidget(text_editor)
     
@@ -315,7 +314,7 @@ def create_new_tab(tab_widget, parent_window, font_family, file_name=None, conte
 # CODE EXECUTION
 # ============================================================================
 
-def execute_code(tab_widget, token_table, 
+def execute_code(tab_widget, lexeme_manager, token_table, 
                 symbol_table, console_widget):
     """Execute LOLCODE in current tab"""
     current_idx = tab_widget.currentIndex()
@@ -468,19 +467,13 @@ def create_main_layout(window, font_family, monospace_font):
     toolbar_layout.addWidget(file_search_btn, 0)
     toolbar_layout.addStretch(1)
     toolbar_layout.addWidget(exec_btn, 0)
-    toolbar_layout.setContentsMargins(10, 10, 10, 0)
+    toolbar_layout.setContentsMargins(10, 10, 10, 10)
     
     # ========== TAB WIDGET ==========
     tab_widget = QTabWidget()
     tab_widget.setTabsClosable(True)
     tab_widget.setMovable(True)
     tab_widget.setFont(QFont(font_family, 9))
-
-    # customize tab bar
-    tab_bar = tab_widget.tabBar()
-    tab_bar.setExpanding(False)
-    tab_bar.setLayoutDirection(Qt.LeftToRight)
-
     tab_widget.setStyleSheet(f"""
         QTabWidget::pane {{
             border: none;
@@ -570,7 +563,7 @@ def create_main_layout(window, font_family, monospace_font):
         lambda: menu.exec_(menu_btn.mapToGlobal(menu_btn.rect().bottomLeft()))
     )
     exec_btn.clicked.connect(
-        lambda: execute_code(tab_widget, lexeme_manager, token_table, 
+        lambda: execute_code(tab_widget, token_table, 
                            symbol_table, console)
     )
     file_search_btn.clicked.connect(
@@ -578,14 +571,14 @@ def create_main_layout(window, font_family, monospace_font):
     )
     
     # ========== GLOBAL SHORTCUTS ==========
-    setup_global_shortcuts(window, tab_widget, lexeme_manager, 
-                          token_table, symbol_table, console, monospace_font)
+    setup_global_shortcuts(window, tab_widget, lexeme_manager, token_table, symbol_table, console, monospace_font)
     
     # Create initial tab
     create_new_tab(tab_widget, window, monospace_font)
 
 
-def setup_global_shortcuts(window, tab_widget, lexeme_manager, token_table, symbol_table, console, font_family):
+def setup_global_shortcuts(window, tab_widget, lexeme_manager, 
+                          token_table, symbol_table, console, font_family):
     """Setup application-wide keyboard shortcuts"""
     shortcuts = {
         'Ctrl+N': lambda: create_new_tab(tab_widget, window, font_family),
@@ -635,8 +628,12 @@ def main():
         
         # Load custom fonts
         try:
-            font_id = QFontDatabase.addApplicationFont(str(BASE_DIR / "src/assets/font/inter.ttf"))
-            mono_font_id = QFontDatabase.addApplicationFont(str(BASE_DIR / "src/assets/font/Consolas.ttf"))
+            font_id = QFontDatabase.addApplicationFont(
+                str(BASE_DIR / "src/assets/font/inter.ttf")
+            )
+            mono_font_id = QFontDatabase.addApplicationFont(
+                str(BASE_DIR / "src/assets/font/Consolas.ttf")
+            )
             
             if font_id != -1:
                 font_family = QFontDatabase.applicationFontFamilies(font_id)[0]
@@ -694,10 +691,18 @@ def main():
                 border-radius: 7px;
                 margin: 2px;
             }}
-            QScrollBar::handle:horizontal:hover {{ background-color: #4F4F4F; }}
-            QScrollBar::handle:horizontal:pressed {{background-color: #565656;}}
-            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{width: 0px;}}
-            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{ background: none }}
+            QScrollBar::handle:horizontal:hover {{
+                background-color: #4F4F4F;
+            }}
+            QScrollBar::handle:horizontal:pressed {{
+                background-color: #565656;
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0px;
+            }}
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {{
+                background: none;
+            }}
         """)
         
         # Create main layout
@@ -720,5 +725,5 @@ def main():
         traceback.print_exc()
         sys.exit(1)
 
-if __name__ == '__main__':
-    main()
+#---------------------------------------------------------------------------
+main()
